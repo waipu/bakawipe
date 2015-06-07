@@ -1,0 +1,121 @@
+# -*- coding: utf-8 -*-
+addcomment = {'topic_id': None,
+              'r': None,
+              'message': None,
+              'user_type': '',
+              'alogin': '',
+              'password': '',
+              'authorize': '',
+              'avatar': '',
+              'button': 'add',
+              'photo': '0',
+              'new_login': '',
+              'name': '',
+              'email': '',
+              'www': '',
+#              'add': 'Прoкoммeнтировaть Ctrl+Enter'
+}
+
+addtopic = {'user_type': 'anonymous',
+            'add': 'Дoбавить запись Ctrl+Enter',
+            'forum_id': None,
+            'subject': None,
+            'topic_id': '',
+            'message': None,
+            'topic_options': 'all',
+            'premoderate': 'nobody'}
+
+uploadimg = {'image_url0': None,
+             'image_file0': None,
+             'position': 'none',
+             'size': 'original'}
+
+uploadavatar = {'avatar_id': None,
+                'image_file': None}
+
+uploadbgm = {'mp3_file': None}
+
+ajax_getposts = {'tid': None,
+                 'lcid': None,
+                 'adc': None}
+
+login = {'login': None,
+         'pass': None,
+         'remember_me': 'on',
+         'r': None}
+
+register = {'register': '1',
+            'r': None,
+            'login': None,
+            'password': None,
+            'password2': None,
+            'name': None,
+            'email': None,
+            'email_options': 'nobody',
+            'day': '0',
+            'month': '0',
+            'year': '0',
+            'sex': 'not_entered',
+            'homepage': '',
+            'icq': '',
+            'odigo': '',
+            'msn': '',
+            'jabber': '',
+            'skype': '',
+            'country': '',
+            'city': '',
+            'profession': '',
+            'education': '',
+            'interest': '',
+            'wanna_buy': '',
+            'wanna_gift': '',
+            'already_bought': '',
+            'already_presented': '',
+            'i_have': '',
+            'fav_films': '',
+            'fav_actors': '',
+            'fav_books': '',
+            'fav_authors': '',
+            'fav_tvshows': '',
+            'fav_animal': '',
+            'fav_auto': '',
+            'fav_mobile': '',
+            'fav_beverage': '',
+            'fav_cinema': '',
+            'fav_rest': '',
+            'fav_club': '',
+            'fav_theater': '',
+            'fav_concert': '',
+            'fav_shop': '',
+            'fav_fitness': '',
+            'fav_recreat': '',
+            'fav_group': '',
+            'fav_song': '',
+            'fav_sport': '',
+            'supporter_of': '',
+            'fan_of': '',
+            'hobby': '',
+            'fav_tours': '',
+            'foreign_langs': '',
+            'also_ican': '',
+            'also_canhelp': '',
+            'blog_title': '',
+            'blog_signature': '',
+            'blog_about': '',
+            'mat_policy_pm': 'censored',
+            'waiting_comments_alert': '1',
+            'access': 'all',
+            'options': 'all',
+            'premoderation': 'nobody'}
+
+sendmessage = {'recipient': None,
+               'subject': None,
+               'message': None,
+               'avatar': '',
+               'button': 'add',
+               'redir': '',
+               'send': '1'}
+
+
+validate_email_inc = {}
+validate_email_fin = {'p': None}

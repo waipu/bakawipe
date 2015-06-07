@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project name="Bakawipe" default="dist" basedir=".">
+  <description>
+  </description>
+  <property name="version" value="4.2.0"/>
+  <property name="lib" location="lib"/>
+  <property name="temp" location="temp"/>
+  <property name="cookies" location="cookies"/>
+  <property name="logs" location="logs"/>
+  <property name="dist-prefix" value="bakawipe-${version}"/>
+  <property name="dist-file" value="${dist-prefix}.tar.bz2"/>
+
+  <target name="tempclean">
+    <delete includeemptydirs="true" failonerror="false" quiet="true">
+      <fileset dir="${temp}"/>
+      <fileset dir="${cookies}"/>
+      <fileset dir="${logs}"/>
+      <fileset dir=".">
+	<include name="**/*~"/>
+	<include name="**/*.pyc"/>
+	<include name="**/__pycache__"/>
+      </fileset>
+    </delete>
+  </target>
+  <target name="tarbz2">
+   <tar destfile="../${dist-file}" compression="bzip2">
+     <tarfileset dir='.'>
+       <!-- Incompleted, prealfa, NR, WIP, broken, notes and pseudocode -->
+       <exclude name="pics/*" />
+       <exclude name="randav/*" />
+       <exclude name="paste/*" />
+       <exclude name="obsolete/" />
+       <exclude name="mailinator-domains.txt" />
+       <exclude name="newproxies.*" />
+       <exclude name="wm_*" />
+       <exclude name="**/*.sock"/>
+       <exclude name="**/*.socket"/>
+       <exclude name="signals*"/>	
+       <exclude name="**/*.log"/>
+       <exclude name="wzauth_data.py"/>
+     </tarfileset>
+   </tar>
+  </target>
+
+  <target name="dist" depends="tempclean,tarbz2">
+  </target>
+</project>

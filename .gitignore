@@ -1,0 +1,15 @@
+*~
+\#*#
+.\#*
+*.pyc
+paste/*
+cookies/*
+temp/*
+logs/*
+randav/*
+newproxies.*
+wm_users.*
+wm_targets.*
+mailinator-domains.*
+wzauth_data.py
+obsolete
