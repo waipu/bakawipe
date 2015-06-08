@@ -50,11 +50,6 @@ class UniWipe(WipeSkel):
                 except ValueError:
                     pass
                 self.w.sleep(self.comment_successtimeout)
-            except exc.Bumplimit as e:
-                try:
-                    self.targets.remove(t)
-                except ValueError as e:
-                    pass
             except exc.Captcha as e:
                 self.log.error('Too many wrong answers to CAPTCHA')
                 self.schedule(self.add_comment, (t, msg))
@@ -70,6 +65,7 @@ class UniWipe(WipeSkel):
                     self.targets.remove(t)
                 except ValueError as e:
                     pass
+                self.w.sleep(self.errortimeout)
             except exc.TemporaryError as e:
                 self.schedule(self.add_comment, (t, msg))
                 self.w.sleep(self.errortimeout)
@@ -78,6 +74,7 @@ class UniWipe(WipeSkel):
                     self.targets.remove(t)
                 except ValueError as e:
                     pass
+                self.w.sleep(self.errortimeout)
             except UnicodeDecodeError as e:
                 self.log.exception(e)
                 self.w.sleep(self.errortimeout)
@@ -135,11 +132,10 @@ class UniWipe(WipeSkel):
         with cstate(self, WipeState.scanning_for_targets):
             while len(self.targets) == 0:
                 c = self.get_targets()
-                if c > 0:
-                    self.schedule(self.comment_loop)
-                else:
+                if c == 0:
                     self.log.info('No targets found at all, sleeping for 30 seconds')
                     self.long_sleep(30)
+            self.schedule(self.comment_loop)
         if len(self.forums) == 0:
             self.schedule(self.wait_loop)
 
