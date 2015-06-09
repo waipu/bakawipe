@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 # -*- mode: python -*-
-from simplejson import scanner
+# from simplejson import scanner
 from lib.sup import randstr, construct_url, net
 from threading import Event
-import random, time
+import random, time, logging
 
 domain = 'mailinator.com'
 url_set = '/settttt'
@@ -22,7 +22,8 @@ class Mailinator(object):
             self.sleep = sleep
         else:
             self.sleep = time.sleep
-    
+        self.log = logging.getLogger('Mailinator')
+
     def get_domains(self):
         rlist = []
         with open('mailinator-domains.txt', 'r') as f:
@@ -39,7 +40,7 @@ class Mailinator(object):
         u = construct_url(domain, (url_set,), {'box': box, 'time': _time})
         rec = self.net.http_req(u)
         return rec.json()
-        
+
     def _grab(self, inbox, address, _time=None):
         _time = _time or str(int(time.time()))
         u = construct_url(domain, (url_grab,), {'inbox': inbox,
@@ -57,6 +58,7 @@ class Mailinator(object):
     def get_messages(self, email, timeout=300, interval=10):
         username, domain = email.split('@', 1)
         address = self._set(username)['address']
+        self.log.info('Requesting messages for %s in %s', username, address)
         rlist = []
         sleeptime = 0
         while self.running.is_set():
@@ -66,11 +68,16 @@ class Mailinator(object):
                 msgs = self._grab(username, address)
             except net.HTTPError as e:
                 if not e.code == 404:
-                    raise
+                    self.log.error(e)
                 sleeptime += interval
                 self.sleep(interval)
                 continue
-            if not 'maildir' in msgs or len(msgs['maildir']) == 0:
+            except net.NetError as e:
+                self.log.error(e)
+                sleeptime += interval
+                self.sleep(interval)
+                continue
+            if 'maildir' not in msgs or len(msgs['maildir']) == 0:
                 sleeptime += interval
                 self.sleep(interval)
                 continue
@@ -84,7 +91,6 @@ class Mailinator(object):
                                   'mail_html': self._render(i['id']).decode('cp1251')})
             if len(rlist) > 0:
                 return rlist
-            else: 
+            else:
                 sleeptime += interval
                 self.sleep(interval)
-               

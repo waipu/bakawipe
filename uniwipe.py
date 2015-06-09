@@ -158,7 +158,6 @@ class UniWipe(WipeSkel):
         if len(self.forums) == 0:
             with cstate(self, WipeState.waiting_for_targets):
                 while len(self.forums) == 0:
-                    # To prevent a busy loop.
                     self.counter_tick()
                     self.w.sleep(1)
         self.schedule(self.scan_targets_loop)

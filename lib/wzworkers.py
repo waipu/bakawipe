@@ -87,8 +87,6 @@ class WZWorkerBase:
                 t = int(d[0])
                 # raise Suspend(t)
                 self.inter_sleep(t)
-            except Resume as e:
-                self.log.info(e)
             except Exception as e:
                 self.log.error(e)
         self.wz.set_sig_handler(b'WZWorker', b'suspend', suspend_handler)
@@ -297,10 +295,13 @@ class WZWorkerBase:
 
     def inter_sleep(self, timeout):
         self.sleep_ticker.tick()
-        while self.sleep_ticker.elapsed(False) < timeout:
+        e = 1
+        while e > 0:
+            e = timeout - self.sleep_ticker.elapsed(False)
             try:
-                self.poll(timeout * 1000)
+                self.poll(e * 1000)
             except Resume:
+                self.log.info(e)
                 return
 
     def poll(self, timeout=None):

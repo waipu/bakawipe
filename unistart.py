@@ -634,6 +634,11 @@ def send_execute_to_ev(code):
     msg.extend((b'WZWorker', b'execute', code))
     send_passthrough(msg)
 
+def send_execute_to_ws(code):
+    msg = [b'WipeSkel']
+    msg.extend((b'WZWorker', b'execute', code))
+    send_passthrough(msg)
+
 def send_execute(name, code):
     msg = [name.encode('utf-8')]
     msg.extend((b'WZWorker', b'execute', code))
@@ -646,7 +651,10 @@ def pexecute_in_wm():
     send_execute_to_wm('\n'.join(get_pasted_lines('--')).encode('utf-8'))
 
 def pexecute_in_ev():
-    send_execute_to_ev('\n'.join(get_pasted_lines('--')).encode('utf-8'))
+    pexecute_in('EVProxy')
+
+def pexecute_in_ws():
+    pexecute_in('WipeSkel')
 
 def drop_users():
     send_passthrough([b'WipeSkel', b'WipeSkel', b'drop-user'])
