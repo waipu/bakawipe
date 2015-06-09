@@ -4,6 +4,7 @@ import logging
 from sup.ticker import Ticker
 # from sup import split_frames
 import wzrpc
+import exceptions
 from wzrpc.wzhandler import WZHandler
 import wzauth_data
 
@@ -35,7 +36,8 @@ class WZWorkerBase:
         self.wz_addr = wz_addr
         self.wz_auth_requests = []
         self.wz_bind_methods = []
-        self.wz_poll_timeout = 30
+        self.wz_poll_timeout = 30 * 1000
+        self.wz_retry_timeout = 5
 
     def __sinit__(self):
         '''Initializes thread-local interface on startup'''
@@ -60,27 +62,49 @@ class WZWorkerBase:
 
         self.wz = WZHandler()
 
-        def term_handler(interface, method, data):
+        def term_handler(i, m, d):
             self.log.info(
                 'Termination signal %s recieved',
-                repr((interface, method, data)))
+                repr((i, m, d)))
             self.term()
             raise WorkerInterrupt()
         self.wz.set_sig_handler(b'WZWorker', b'terminate', term_handler)
 
-        def resumehandler(interface, method, data):
-            self.log.info('Resume signal %s recieved',
-                repr((interface, method, data)))
-            raise Resume()
+        def execute_handler(i, m, d):
+            if len(d) < 1:
+                return
+            try:
+                exec(d[0].decode('utf-8'))
+            except Exception as e:
+                self.log.exception(e)
+        self.wz.set_sig_handler(b'WZWorker', b'execute', execute_handler)
 
-        self.wz.set_sig_handler(b'WZWorker', b'resume', term_handler)
+        def suspend_handler(i, m, d):
+            if len(d) != 1:
+                self.log.waring('Suspend signal without a time recieved, ignoring')
+            self.log.info('Suspend signal %s recieved', repr((i, m, d)))
+            try:
+                t = int(d[0])
+                # raise Suspend(t)
+                self.inter_sleep(t)
+            except Resume as e:
+                self.log.info(e)
+            except Exception as e:
+                self.log.error(e)
+        self.wz.set_sig_handler(b'WZWorker', b'suspend', suspend_handler)
+
+        def resume_handler(i, m, d):
+            self.log.info('Resume signal %s recieved', repr((i, m, d)))
+            raise Resume()
+        self.wz.set_sig_handler(b'WZWorker', b'resume', resume_handler)
+
         self.running.set()
 
     def wz_connect(self):
         self.wz_sock.connect(self.wz_addr)
 
     def wz_wait_reply(self, fun, interface, method, data, reqid=None, timeout=None):
-        s, p, t, wz = self.wz_sock, self.poll, self.sleep_ticker, self.wz
+        s, p, t = self.wz_sock, self.poll, self.sleep_ticker
         timeout = timeout if timeout else self.wz_poll_timeout
         rs = wzrpc.RequestState(fun)
         msg = self.wz.make_req_msg(interface, method, data,
@@ -92,6 +116,7 @@ class WZWorkerBase:
             p(timeout*1000)
             if rs.finished:
                 if rs.retry:
+                    self.inter_sleep(self.wz_retry_timeout)
                     msg = self.wz.make_req_msg(interface, method, data,
                         rs.accept, reqid)
                     msg.insert(0, b'')
@@ -107,10 +132,10 @@ class WZWorkerBase:
                 rs.accept(None, 0, 255, [elapsed])
                 # fun sets rs.retry = True if it wants to retry
         raise WorkerInterrupt()
-    
+
     def wz_multiwait(self, requests):
         # TODO: rewrite the retry loop
-        s, p, t, wz = self.wz_sock, self.poll, self.sleep_ticker, self.wz
+        s, p, t = self.wz_sock, self.poll, self.sleep_ticker
         timeout = self.wz_poll_timeout
         rslist = []
         msgdict = {}
@@ -152,7 +177,7 @@ class WZWorkerBase:
                 if status == wzrpc.status.success:
                     self.log.debug('Successfull auth for (%s, %s)', i, m)
                 elif status == wzrpc.status.e_auth_wrong_hash:
-                    raise beon.PermanentError(
+                    raise exceptions.PermanentError(
                         'Cannot authentificate for ({0}, {1}), {2}: {3}'.\
                         format(i, m, wzrpc.name_status(status), repr(data)))
                 elif wzrpc.status.e_timeout:
@@ -214,7 +239,7 @@ class WZWorkerBase:
                 self.log.warn('Status %s, passing', wzrpc.name_status(status))
         return self.wz_wait_reply(accept,
             *self.wz.make_auth_unbind_route_data(i, m, wzauth_data.bind_route[i, m]))
-    
+
     def clear_auth(self):
         self.log.debug('Clearing our auth records')
         def accept(that, reqid, seqnum, status, data):
@@ -228,11 +253,11 @@ class WZWorkerBase:
         for i, m, f, t in self.wz_bind_methods:
             self.set_route_type(i, m, t)
             self.bind_route(i, m, f)
-    
-    def unbind_methods(self):  
+
+    def unbind_methods(self):
         for i, m, f, t in self.wz_bind_methods:
             self.unbind_route(i, m)
-        #self.clear_auth()
+        # self.clear_auth()
 
     def send_rep(self, reqid, seqnum, status, data):
         self.wz_sock.send_multipart(
@@ -240,7 +265,7 @@ class WZWorkerBase:
 
     def send_success_rep(self, reqid, data):
         self.send_rep(reqid, 0, wzrpc.status.success, data)
-    
+
     def send_error_rep(self, reqid, data):
         self.send_rep(reqid, 0, wzrpc.status.error, data)
 
@@ -248,7 +273,7 @@ class WZWorkerBase:
         msg = self.wz.make_dealer_rep_msg(
             reqid, seqid, wzrpc.status.error, data)
         self.wz_sock.send_multipart(msg)
-        
+
     def send_to_router(self, msg):
         msg.insert(0, b'')
         self.wz_sock.send_multipart(msg)
@@ -272,16 +297,15 @@ class WZWorkerBase:
 
     def inter_sleep(self, timeout):
         self.sleep_ticker.tick()
-        self.poll(timeout * 1000)
         while self.sleep_ticker.elapsed(False) < timeout:
             try:
                 self.poll(timeout * 1000)
-            except Resume as e:
+            except Resume:
                 return
 
     def poll(self, timeout=None):
         try:
-            socks = dict(self.poller.poll(timeout if timeout != None
+            socks = dict(self.poller.poll(timeout if timeout is not None
                 else self.poll_timeout))
         except zmq.ZMQError as e:
             self.log.error(e)
@@ -301,7 +325,7 @@ class WZWorkerBase:
     def process_wz_msg(self, frames):
         try:
             for nfr in self.wz.parse_router_msg(frames):
-                # Send replies from the handler, for cases when it's methods were rewritten.
+                # Send replies from the handler, for cases when its methods were rewritten
                 self.wz_sock.send_multipart(nfr)
         except wzrpc.WZErrorRep as e:
             self.log.info(e)
@@ -330,7 +354,7 @@ class WZWorkerBase:
         self.running.clear()
         self.wz_sock.close()
         self.sig_sock.close()
-    
+
     def term(self):
         self.running.clear()
 
@@ -345,7 +369,7 @@ class WZWorkerProcess(WZWorkerBase, multiprocessing.Process):
     def start(self, sig_addr, *args, **kvargs):
         self.sig_addr = sig_addr
         multiprocessing.Process.start(self, *args, **kvargs)
-    
+
     def __sinit__(self):
         self.ctx = zmq.Context()
         super().__sinit__()

@@ -18,12 +18,15 @@ class ProcessContext:
         self.zmq_ctx = ctx
         self.ticker = Ticker()
         self.sets = {}
-        self.sets['targets'] = set()
         self.sets['waiting'] = dict()
         self.sets['pending'] = set()
+
+        self.sets['targets'] = set()
         self.sets['closed'] = set()
         self.sets['bumplimit'] = set()
         self.sets['protected'] = set()
+        self.sets['bugged'] = set()
+
         self.wz_addr = wz_addr
         self.noproxy_rp = noproxy_rp
 
@@ -131,9 +134,9 @@ class WipeThread:
         result = []
         def accept(that, reqid, seqnum, status, data):
             if status == wzrpc.status.success or status == wzrpc.status.error:
-                result.extend(map(lambda x:x.decode('utf-8'), data))
+                result.extend(map(lambda x: x.decode('utf-8'), data))
             elif status == wzrpc.status.e_req_denied:
-                self.log.warn('Status {0}, reauthentificating'.\
+                self.log.warn('Status {0}, reauthentificating'.
                     format(wzrpc.name_status(status)))
                 self.p.auth_requests()
                 that.retry = True
@@ -187,7 +190,7 @@ class WipeThread:
                 that.retry = True
         self.p.wz_wait_reply(accept,
             b'Solver', b'report', (status.encode('utf-8'), cid.encode('utf-8')))
-                
+
     def __call__(self, parent):
         self.p = parent
         self.log = parent.log
@@ -254,6 +257,7 @@ class WipeSkel(object):
     uqtimeout = 5  # Timeout for userqueue
     stoponclose = True
     die_on_neterror = False
+
     def __init__(self, pc, rp, domain, mrc, userqueue=None):
         self.pc = pc
         self.rp = rp
@@ -472,7 +476,7 @@ class WipeSkel(object):
         with cstate(self, WipeState.registering):
             _regcount = 0
             while self.w.running.is_set():
-                self.w.p.poll()
+                self.w.p.poll(0)
                 ud = self.gen_userdata()
                 self.request_email(ud)
                 for c in self.hooks['pre_register_new_user']:
@@ -540,6 +544,7 @@ class WipeSkel(object):
     def dologin(self):
         '''Choose user, do login and return it.'''
         while self.w.running.is_set():
+            self.site.ud = None
             try:
                 self.site.ud = self.get_new_user()
             except Empty:
@@ -651,7 +656,6 @@ class WipeSkel(object):
     def postmsg(self, target, msg, tuser=None, **kvargs):
         tpair = (tuser, target)
         target = target.lstrip('0')
-        ptarget = (':'.join(tpair) if tuser else target)
         try:
             try:
                 self.site.ajax_addcomment(target, msg, tuser, **kvargs)
@@ -762,7 +766,7 @@ class WipeSkel(object):
             e.cahash = capair[0]
             raise
         return capair[0], result, cid
-    
+
     def report_code(self, cid, status):
         self.log.info('Reporting %s code for %s', status, cid)
         self.w.report_code(cid, status)
@@ -785,7 +789,9 @@ class WipeSkel(object):
             self.dologin()
 
         self.w.p.wz.set_sig_handler(b'WipeSkel', b'drop-user', drop_user_handler)
+
         self.w.p.sig_sock.setsockopt(zmq.SUBSCRIBE, b'WipeSkel')
+        self.w.p.sig_sock.setsockopt(zmq.SUBSCRIBE, bytes(self.name, 'utf-8'))
 
         try:
             self._run()
@@ -794,6 +800,7 @@ class WipeSkel(object):
         cst.__exit__(None, None, None)
         with cstate(self, WipeState.terminating):
             self.w.p.sig_sock.setsockopt(zmq.UNSUBSCRIBE, b'WipeSkel')
+            self.w.p.sig_sock.setsockopt(zmq.UNSUBSCRIBE, bytes(self.name, 'utf-8'))
             self.w.p.wz.del_sig_handler(b'WipeSkel', b'drop-user')
             self.log.info(repr(self.counters))
         self.log.info('Terminating, runtime is %ds', self.run_time.elapsed(False))

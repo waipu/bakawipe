@@ -441,7 +441,7 @@ class WipeManager:
             'forums': forums,
             'domains': domains,
             'sets': self.pc.sets,
-            }
+        }
         with open(self.targetsfile, 'wb') as f:
             f.write(pickle.dumps(data, pickle.HIGHEST_PROTOCOL))
 
@@ -614,21 +614,58 @@ def send_passthrough(frames):
     msg.extend(wzrpc.make_sig_msg(b'WipeManager', b'passthrough', frames))
     sig_sock.send_multipart(msg)
 
+def get_pasted_lines(sentinel):
+    'Yield pasted lines until the user enters the given sentinel value.'
+    print("Pasting code; enter '{0}' alone on the line to stop.".format(sentinel))
+    while True:
+        l = input(':')
+        if l == sentinel:
+            return
+        else:
+            yield l
+
+def send_execute_to_wm(code):
+    msg = [b'WipeManager']
+    msg.extend((b'WZWorker', b'execute', code))
+    send_to_wm(msg)
+
+def send_execute_to_ev(code):
+    msg = [b'EVProxy']
+    msg.extend((b'WZWorker', b'execute', code))
+    send_passthrough(msg)
+
+def send_execute(name, code):
+    msg = [name.encode('utf-8')]
+    msg.extend((b'WZWorker', b'execute', code))
+    send_passthrough(msg)
+
+def pexecute_in(name):
+    send_execute(name, '\n'.join(get_pasted_lines('--')).encode('utf-8'))
+
+def pexecute_in_wm():
+    send_execute_to_wm('\n'.join(get_pasted_lines('--')).encode('utf-8'))
+
+def pexecute_in_ev():
+    send_execute_to_ev('\n'.join(get_pasted_lines('--')).encode('utf-8'))
+
 def drop_users():
     send_passthrough([b'WipeSkel', b'WipeSkel', b'drop-user'])
 
 def log_spawn_name():
     send_passthrough([b'WipeThread', b'WipeThread', b'log-spawn-name'])
 
-if c.no_shell:
-    while True:
-        time.sleep(1)
-else:
-    try:
-        import IPython
+try:
+    import IPython
+    if c.no_shell:
+        IPython.embed_kernel()
+    else:
         IPython.embed()
-    except ImportError:
-        # fallback shell
+except ImportError:
+    # fallback shell
+    if c.no_shell:
+        while True:
+            time.sleep(1)
+    else:
         while True:
             try:
                 exec(input('> '))

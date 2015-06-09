@@ -18,7 +18,7 @@ class WZHandler(WZBase):
 
     def set_sig_handler(self, interface, method, fun):
         self.sig_handlers[(interface, method)] = fun
-    
+
     def del_req_handler(self, interface, method):
         del self.req_handlers[(interface, method)]
 
@@ -66,13 +66,13 @@ class WZHandler(WZBase):
         msg = make_req_msg(interface, method, args, reqid)
         self.set_response_handler(reqid, fun)
         return msg
-    
+
     def make_router_req_msg(self, iden, interface, method, args, fun, reqid=None):
         msg = iden[:]
         msg.append(b'')
         msg.extend(self.make_req_msg(interface, method, args, fun, reqid))
         return msg
-    
+
     def make_router_rep_msg(self, reqid, seqnum, status, answer):
         iden = self.iden_reqid_map.get_key(reqid)
         if seqnum == 0:
@@ -91,9 +91,9 @@ class WZHandler(WZBase):
     def make_reqid(self):
         while True:
             reqid = random.randint(1, (2**64)-1)
-            if not reqid in self.response_handlers:
+            if reqid not in self.response_handlers:
                 return reqid
-        
+
     def make_auth_req_data(self, interface, method, key, reqid=None):
         if not reqid:
             reqid = self.make_reqid()
@@ -103,13 +103,13 @@ class WZHandler(WZBase):
     def make_auth_bind_route_data(self, interface, method, key, reqid=None):
         if not reqid:
             reqid = self.make_reqid()
-        args = [interface, method, make_auth_hash(interface, method, reqid, key)]        
+        args = [interface, method, make_auth_hash(interface, method, reqid, key)]
         return (b'Router', b'auth-bind-route', args, reqid)
 
     def make_auth_unbind_route_data(self, interface, method, key, reqid=None):
         if not reqid:
             reqid = self.make_reqid()
-        args = [interface, method, make_auth_hash(interface, method, reqid, key)]        
+        args = [interface, method, make_auth_hash(interface, method, reqid, key)]
         return (b'Router', b'auth-unbind-route', args, reqid)
 
     def make_auth_set_route_type_data(self, interface, method, type_, key, reqid=None):
@@ -126,7 +126,7 @@ class WZHandler(WZBase):
 
     def req_from_data(self, d, fun):
         return self.make_req_msg(d[0], d[1], d[2], fun, d[3])
-  
+
     def _parse_err(self, iden, msg, status):
         pass
 

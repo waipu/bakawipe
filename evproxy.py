@@ -51,7 +51,7 @@ class EvaluatorProxy:
         self.ev = self.ev_init()
         self.bind_kt_ticker.tick()
         while self.p.running.is_set():
-            socks = self.p.poll()
+            self.p.poll()
             if self.bind_kt_ticker.elapsed(False) > self.bind_kt:
                 self.bind_kt_ticker.tick()
                 self.send_keepalive()

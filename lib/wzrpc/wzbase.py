@@ -11,7 +11,7 @@ class WZBase(object):
         msg.append(header_struct.pack(wzstart, wzversion, msgtype.err))
         msg.append(error_struct.pack(status))
         return msg
-    
+
     def parse_msg(self, iden, msg):
         if len(msg) == 0 or not msg[0].startswith(wzstart):
             raise WZENoWZ('Not a WZRPC message {0} from {1}'.format(msg, repr(iden)))

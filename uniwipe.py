@@ -4,6 +4,7 @@ from sup.net import NetError
 from wzworkers import WorkerInterrupt
 from wipeskel import WipeSkel, WipeState, cstate
 from beon import exc, regexp
+from collections import ChainMap
 import re
 
 class UniWipe(WipeSkel):
@@ -15,6 +16,10 @@ class UniWipe(WipeSkel):
                         or type(targets) == tuple and list(targets)
                         or targets)
         super().__init__(*args, **kvargs)
+        self.ignore_map = ChainMap(
+            self.pc.sets['closed'], self.pc.sets['bumplimit'],
+            self.pc.sets['bugged'], self.pc.sets['protected'],
+            self.targets)
 
     def on_caprate_limit(self, rate):
         if not self.logined:
@@ -60,7 +65,16 @@ class UniWipe(WipeSkel):
                 self.schedule(self.add_comment, (t, msg))
                 self.schedule_first(self.switch_user)
             except exc.EmptyAnswer as e:
-                self.log.info('Removing %s from targets', t)
+                self.log.info('Removing %s from targets and adding to bugged', t)
+                self.pc.sets['bugged'].add(t)
+                try:
+                    self.targets.remove(t)
+                except ValueError as e:
+                    pass
+                self.w.sleep(self.errortimeout)
+            except exc.TopicDoesNotExist as e:
+                self.log.info('Removing %s from targets and adding to bugged', t)
+                self.pc.sets['bugged'].add(t)
                 try:
                     self.targets.remove(t)
                 except ValueError as e:
@@ -80,7 +94,7 @@ class UniWipe(WipeSkel):
                 self.w.sleep(self.errortimeout)
 
     def forumwipe_loop(self):
-        for f in self.forums:
+        for f in self.forums.copy():
             self.counter_tick()
             try:
                 self.addtopic(self.msgfun(), self.sbjfun(), f)
@@ -114,9 +128,7 @@ class UniWipe(WipeSkel):
             rxp = re.compile(regexp.f_sub_id.format(user, self.site.domain, forum))
             found = set(map(lambda x: (user, x[0]+x[1]), rxp.findall(page)))
             for t in found:
-                if (t in self.pc.sets['closed']
-                    or t in self.pc.sets['bumplimit']
-                    or t in self.targets):
+                if t in self.ignore_map:
                     continue
                 targets.append(t)
             lt = len(targets)
