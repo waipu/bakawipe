@@ -295,9 +295,10 @@ class WZWorkerBase:
 
     def inter_sleep(self, timeout):
         self.sleep_ticker.tick()
-        e = 1
-        while e > 0:
+        while True:
             e = timeout - self.sleep_ticker.elapsed(False)
+            if e <= 0:
+                break
             try:
                 self.poll(e * 1000)
             except Resume:
