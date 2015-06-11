@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # -*- mode: python -*-
 # from simplejson import scanner
-from lib.sup import randstr, construct_url, net
+from sup import randstr, construct_url, net
 from threading import Event
 import random, time, logging
 
@@ -57,10 +57,20 @@ class Mailinator(object):
 
     def get_messages(self, email, timeout=300, interval=10):
         username, domain = email.split('@', 1)
-        address = self._set(username)['address']
-        self.log.info('Requesting messages for %s in %s', username, address)
-        rlist = []
+        self.log.info('Requesting messages for %s', username)
         sleeptime = 0
+        while self.running.is_set():
+            try:
+                address = self._set(username)['address']
+                break
+            except net.NetError as e:
+                self.log.error(e)
+                sleeptime += interval
+                self.sleep(interval)
+            except Exception as e:
+                self.log.exception(e)
+        self.log.info('Address for %s is %s', username, address)
+        rlist = []
         while self.running.is_set():
             if sleeptime > timeout:
                 raise ValueError('No mail in here')
@@ -76,6 +86,9 @@ class Mailinator(object):
                 self.log.error(e)
                 sleeptime += interval
                 self.sleep(interval)
+                continue
+            except Exception as e:
+                self.log.exception(e)
                 continue
             if 'maildir' not in msgs or len(msgs['maildir']) == 0:
                 sleeptime += interval

@@ -15,8 +15,10 @@ class NetError(Exception):
 
 class ProxyError(NetError):
     pass
+
 class DNSError(NetError):
     pass
+
 class ConnError(NetError):
     def __init__(self, code=None, *args, **kvargs):
         self.code = code

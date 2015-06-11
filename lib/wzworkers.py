@@ -18,10 +18,12 @@ class Suspend(Exception):
     '''Exception to raise on suspend signal'''
     def __init__(self, interval, *args, **kvargs):
         self.interval = interval
-        super().__init__(*args, **kvargs)
+        super().__init__('Suspend signal recieved, {0}s'.format(interval))
 
 class Resume(Exception):
     '''Exception to raise when suspend sleep is interrupted'''
+    def __init__(self):
+        super().__init__('Resume signal recieved')
 
 class WZWorkerBase:
     def __init__(self, wz_addr, fun, args=(), kvargs={},
@@ -81,7 +83,7 @@ class WZWorkerBase:
 
         def suspend_handler(i, m, d):
             if len(d) != 1:
-                self.log.waring('Suspend signal without a time recieved, ignoring')
+                self.log.warn('Suspend signal without a time recieved, ignoring')
             self.log.info('Suspend signal %s recieved', repr((i, m, d)))
             try:
                 t = int(d[0])

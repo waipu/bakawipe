@@ -57,6 +57,7 @@ class UniWipe(WipeSkel):
                 self.w.sleep(self.comment_successtimeout)
             except exc.Captcha as e:
                 self.log.error('Too many wrong answers to CAPTCHA')
+                self.switch_user()
                 self.schedule(self.add_comment, (t, msg))
             except exc.UnknownAnswer as e:
                 self.log.warn('%s: %s', e, e.answer)

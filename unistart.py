@@ -80,13 +80,18 @@ parser.add_argument('--only-cache', '-C', action='store_true',
     help="Disables any requests in DataLoader (includes Witch)")
 parser.add_argument('--no-shell', '-N', action='store_true',
     help="Sleep instead of starting the shell")
+
 parser.add_argument('--tcount', '-t', type=int, default=10,
     help='WipeThread count')
 parser.add_argument('--ecount', '-e', type=int, default=0,
     help='EvaluatorProxy count')
+parser.add_argument('--domains', '-d', nargs='+',
+    help='Initial domain list (will be saved in targets file)')
+
 parser.add_argument('--upload-avatar', action='store_true', default=False,
     help='Upload random avatar after registration')
 parser.add_argument('--av-dir', default='randav', help='Directory with avatars')
+
 parser.add_argument('--rp-timeout', '-T', type=int, default=10,
     help='Default rp timeout in seconds')
 parser.add_argument('--conlimit', type=int, default=3,
@@ -98,14 +103,26 @@ parser.add_argument('--caprate_minp', type=int, default=5,
     help='Cap rate minimum possible count for limit check')
 parser.add_argument('--caprate_limit', type=float, default=0.8,
     help='Captcha rate limit')
+parser.add_argument('--catrymax', type=int, default=3,
+    help='Max captcha retries with the same postdata')
 
-parser.add_argument('--comment_successtimeout', type=float, default=0.8,
+parser.add_argument('--comment_successtimeout', type=float, default=0.2,
     help='Comment success timeout')
-parser.add_argument('--topic_successtimeout', type=float, default=0.1,
+parser.add_argument('--topic_successtimeout', type=float, default=0.8,
     help='Topic success timeout')
+parser.add_argument('--successtimeout', type=float, default=1,
+    help='Success timeout')
 parser.add_argument('--errortimeout', type=float, default=3,
     help='Error timeout')
 
+parser.add_argument('--target-cps', type=float, default=4.15,
+    help='Target comments per second rate, 0 to disable')
+parser.add_argument('--cps-adjuction-step-min', type=float, default=0.01,
+    help='Base comment_successtimeout ajuction step')
+parser.add_argument('--cps-adjuction-scale', type=float, default=3,
+    help='Scale for comment_successtimeout ajuction diff')
+parser.add_argument('--counter-report-interval', type=int, default=30,
+    help='Counter report and timeout adjuction interval')
 
 parser.add_argument('--stop-on-closed', action='store_true', default=False,
     help='Forget about closed topics')
@@ -207,8 +224,16 @@ def create_spawn(proxy, proxytype, pc, uq=None):
         w.die_on_neterror = c.die_on_neterror
         w.caprate_minp = c.caprate_minp
         w.caprate_limit = c.caprate_limit
+        w.catrymax = c.catrymax
         w.conlimit = c.conlimit
-        w.comment_successtimeout = 0.2
+        w.successtimeout = c.successtimeout
+        w.errortimeout = c.errortimeout
+        w.topic_successtimeout = c.topic_successtimeout
+        w.comment_successtimeout = c.comment_successtimeout
+        w.target_cps = c.target_cps
+        w.cps_adjuction_step_min = c.cps_adjuction_step_min
+        w.cps_adjuction_scale = c.cps_adjuction_scale
+        w.counter_report_interval = c.counter_report_interval
         if c.upload_avatar:
             w.hooks['post_login'].append(upload_avatar)
         yield w
@@ -484,6 +509,7 @@ class WipeManager:
             self.spawnqueue = Queue()
             self.load_bumplimit_set()
             self.load_targets()
+            domains.update(self.c.domains)
             self.load_users()
             self.spawn_wipethreads()
         if self.c.ecount > 0:
@@ -601,7 +627,7 @@ def rffu(urls):
         forums[domain].remove((user, forum))
 
 def add_user(domain, login, passwd):
-    uq = wm.get_userqueue(domain)
+    uq = wm.child.get_userqueue(domain)
     uq.put({'login': login, 'passwd': passwd}, False)
 
 def send_to_wm(frames):

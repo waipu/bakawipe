@@ -234,7 +234,8 @@ class WipeThread:
                     except WorkerInterrupt as e:
                         self.log.error(e)
                     except Exception as e:
-                        self.log.exception('Spawn throwed exception %s, requesting new', e)
+                        self.log.exception(
+                            'Spawn throwed exception %s, requesting new', e)
                     del self.spawn
                     self.spawn = None
                     self.spawnqueue.task_done()
@@ -252,7 +253,11 @@ class WipeSkel(object):
     successtimeout = 1
     comment_successtimeout = 0
     topic_successtimeout = 0.8
-    counter_report_interval = 60
+    counter_report_interval = 30
+    target_cps = 4.15
+    cps_adjuction_step_min = 0.01
+    cps_adjuction_precission = 0.1
+    cps_adjuction_scale = 3
     errortimeout = 3
     uqtimeout = 5  # Timeout for userqueue
     stoponclose = True
@@ -361,6 +366,32 @@ class WipeSkel(object):
             # else:
             #     while not self.dologin(): self.w.sleep(self.errortimeout)
 
+    def adjuct_comment_successtimeout(self, cps):
+        step = self.cps_adjuction_step_min
+        prec = self.cps_adjuction_precission
+        scale = self.cps_adjuction_scale
+        diff = self.target_cps - cps
+        if diff > prec:
+            if self.comment_successtimeout == 0:
+                # Nothing to adjuct here.
+                return
+            if diff * scale > 1:
+                step = step * diff * scale
+        elif diff < -prec:
+            if diff * scale < -1:
+                step = step * diff * scale
+            else:
+                step = -step
+        else:
+            return
+        if step > self.comment_successtimeout:
+            self.comment_successtimeout = 0
+        else:
+            self.comment_successtimeout -= step
+        self.log.info(
+            'Difference from target cps is %f, adjucting timeout by %f',
+            diff, step)
+
     def counter_tick(self):
         if self.counter_report_interval == 0:
             return
@@ -370,9 +401,15 @@ class WipeSkel(object):
             ccount = self.counters['comments']
             tcount = self.counters['topics']
             if ccount > 0:
+                cps = ccount/e
                 self.log.info('%d comments in %d seconds, %0.2f cps, %0.2f caprate',
-                    ccount, e, ccount/e, self.caprate)
+                    ccount, e, cps, self.caprate)
                 self.counters['comments'] = 0
+                if self.target_cps:
+                    if (e - self.counter_report_interval) < 5:
+                        self.adjuct_comment_successtimeout(cps)
+                    else:
+                        self.log.debug('Elapsed > interval by > 5, skipping adjuction')
             if tcount > 0:
                 self.log.info('%d topics in %d seconds, %0.2f tps, %0.2f caprate',
                     tcount, e, tcount/e, self.caprate)
