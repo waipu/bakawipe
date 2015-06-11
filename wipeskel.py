@@ -155,9 +155,16 @@ class WipeThread:
         result = []
         def accept(that, reqid, seqnum, status, data):
             if status == wzrpc.status.success or status == wzrpc.status.error:
-                result.extend(map(lambda x:x.decode('utf-8'), data))
+                if seqnum > 0:
+                    if len(data) == 1:
+                        self.log.info('Solver: captcha has been %s',
+                            data[0].decode('utf-8'))
+                    else:
+                        self.log.warn('Unknown captcha status: %s', repr(data))
+                    return
+                result.extend(data)
             elif status == wzrpc.status.e_req_denied:
-                self.log.warn('Status {0}, reauthentificating'.\
+                self.log.warn('Status {0}, reauthentificating'.
                     format(wzrpc.name_status(status)))
                 self.p.auth_requests()
                 that.retry = True
@@ -169,11 +176,13 @@ class WipeThread:
                 that.retry = True
         self.p.wz_wait_reply(accept,
             b'Solver', b'solve', (b'inbound', img), timeout=300)
-        if len(result) == 2: # Lame and redundant check. Rewrite this part someday.
-            return result
-        else:
-            raise OCRError('Solver returned error %s', result)
-        return tuple(result)
+        if len(result) > 1:
+            if result[0] == b'result':
+                # Do we need to decode it?
+                return result[1].decode('utf-8'), result[2].decode('utf-8')
+            elif result[0] == b'error':
+                raise OCRError('Solver returned error %s', result[1].decode('utf-8'))
+        raise OCRError('Solver returned strange status %s', repr(result))
 
     def report_code(self, cid, status):
         def accept(that, reqid, seqnum, status, data):
@@ -182,7 +191,7 @@ class WipeThread:
             elif status == wzrpc.status.error:
                 self.log.error('Solver returned error on report: %s', repr(data))
             elif status == wzrpc.status.e_req_denied:
-                self.log.warn('Status {0}, reauthentificating'.\
+                self.log.warn('Status {0}, reauthentificating'.
                     format(wzrpc.name_status(status)))
                 self.p.auth_requests()
             else:
@@ -722,11 +731,13 @@ class WipeSkel(object):
         except beon.Bumplimit as e:
             self.log.info(e)
             self.pc.sets['bumplimit'].add(tpair)
+            self.pc.add_waiting('bumplimit', tpair, 86400)
             raise
         except (beon.Closed, beon.UserDeny) as e:
             self.pc.sets['closed'].add(tpair)
             if self.stoponclose:
                 self.log.info(e)
+                self.pc.add_waiting('closed', tpair, 86400)
                 raise beon.PermClosed("%s:%s is closed", tpair, e.answer)
             else:
                 self.log.info('%s, starting 300s remove timer', e)

@@ -68,6 +68,7 @@ class UniWipe(WipeSkel):
             except exc.EmptyAnswer as e:
                 self.log.info('Removing %s from targets and adding to bugged', t)
                 self.pc.sets['bugged'].add(t)
+                self.pc.add_waiting('bugged', t, 86400)
                 try:
                     self.targets.remove(t)
                 except ValueError as e:
@@ -76,6 +77,7 @@ class UniWipe(WipeSkel):
             except exc.TopicDoesNotExist as e:
                 self.log.info('Removing %s from targets and adding to bugged', t)
                 self.pc.sets['bugged'].add(t)
+                self.pc.add_waiting('bugged', t, 86400)
                 try:
                     self.targets.remove(t)
                 except ValueError as e:
