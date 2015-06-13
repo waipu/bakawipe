@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
-from time import asctime
+# -*- mode: python -*-
+# from time import asctime
 from urllib.parse import quote_plus
 from .special import *
 
@@ -25,7 +26,7 @@ def urlencode(d, to='utf-8') -> bytes:
     for k, v in d.items():
         try:
             data.append('='.join((k, quote_plus(v, encoding=to))))
-        except TypeError as e:
+        except TypeError:
             print(k, v)
             raise
     return '&'.join(data)
@@ -46,8 +47,10 @@ def encode_dict(in_dict, frm='utf8', to='utf8') -> dict:
                 else:
                     v = v.decode().encode(to)
             else:
-                if frm == to: v.decode(to) # test
-                else: v = v.decode(frm).encode(to)
+                if frm == to:
+                     v.decode(to) # test
+                else:
+                     v = v.decode(frm).encode(to)
         out_dict[k] = v
     return out_dict
 

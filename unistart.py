@@ -16,6 +16,7 @@ from wipeskel import *
 import wzrpc
 from beon import regexp
 import pickle
+import wordsgen
 
 from logging import config
 from logconfig import logging_config
@@ -65,7 +66,7 @@ def message():
     # +']')
     # http://simg2.gelbooru.com//images/626/58ca1c9a8ffcdedd0e2eb6f33c9389cb7588f0d1.jpg
     # msg.append('Enjoy the view!')
-    msg.append(str(random.randint(0, 9999999999)))
+    msg.extend(wordsgen.gen_word() for x in range(0, random.randint(0, 10)))
     return '\n'.join(msg)
 
 def sbjfun():
@@ -87,6 +88,8 @@ parser.add_argument('--ecount', '-e', type=int, default=0,
     help='EvaluatorProxy count')
 parser.add_argument('--domains', '-d', nargs='+',
     help='Initial domain list (will be saved in targets file)')
+parser.add_argument('--drop-users', nargs='+',
+    help='List of domains to drop users for')
 
 parser.add_argument('--upload-avatar', action='store_true', default=False,
     help='Upload random avatar after registration')
@@ -405,6 +408,8 @@ class WipeManager:
             users = pickle.loads(f.read())
         try:
             for domain in users.keys():
+                if self.c.drop_users and domain in self.c.drop_users:
+                    continue
                 uq = Queue()
                 for ud in users[domain]:
                     self.log.debug('Loaded user %s:%s', domain, ud['login'])
@@ -509,7 +514,8 @@ class WipeManager:
             self.spawnqueue = Queue()
             self.load_bumplimit_set()
             self.load_targets()
-            domains.update(self.c.domains)
+            if self.c.domains:
+                domains.update(self.c.domains)
             self.load_users()
             self.spawn_wipethreads()
         if self.c.ecount > 0:

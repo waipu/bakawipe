@@ -1,10 +1,9 @@
 # -*- coding: utf-8 -*-
-import re, time
-from urllib.parse import quote_plus, unquote_plus
+import re
 from threading import Lock
 from BeautifulSoup import BeautifulSoup
 from random import randint
-from sup import formquery, formfile, encode_dict, urlencode, construct_url, randstr
+from sup import formquery, formfile, urlencode, construct_url, randstr
 from . import url, postdata, rsp, exc, regexp
 
 class Beon(object):
@@ -12,23 +11,23 @@ class Beon(object):
   rsp = rsp
   commentenc = 'utf8'
   topicenc = 'cp1251'
-  chatenc = 'utf8'#?
+  chatenc = 'utf8' # ?
   ajaxenc = 'utf8'
   regenc = 'cp1251'
   siteenc = 'cp1251'
   refound = re.compile(regexp.r302_found) # TODO: use something more reliable
   bad_gateway = re.compile(regexp.r502_bad_gateway)
   deobfuscate_html = re.compile(regexp.deobfuscate_html)
-  
+
   def __init__(self, domain, req_fun=None):
     self.domain = domain # Yep, domain. beon.ru/ltalk.ru/etc
     self.ptforum = 'anonymous' # Default plaintext forum
     self.ud = {} # Current user data
     self.logined = True # Logined (cookie) mode.
     self.login_lock = Lock()
-    self.ref = ''.join(('http://', randstr(3,6), '.', domain,'/')) # Referer in postdata.
-    self.a = str(randint(0,6)) # Auth server.
-    
+    self.ref = 'http://'+randstr(3, 6)+'.'+domain+'/' # Referer in postdata.
+    self.a = str(randint(0, 6)) # Auth server.
+
     self.req = req_fun
 
   def addcomment(self, topicid, text, user=None, logined=True, **kvargs):
@@ -53,7 +52,7 @@ class Beon(object):
     p.update(kvargs)
     s = urlencode(p, to=self.siteenc).encode(self.siteenc)
     s+= ('&add='+'Прoкoммeнтировaть Ctrl+Enter').encode(self.siteenc)
-    u = (construct_url('%s.%s'%(user, self.domain), (url.addcomment,)) if user
+    u = (construct_url(user+'.'+self.domain, (url.addcomment,)) if user
            else construct_url(self.domain, (url.addcomment,)))
     rec = self.req(u, s).decode()
     if self.deobfuscate_html.search(rec):
@@ -68,7 +67,8 @@ class Beon(object):
       raise exc.Success('Probably posted, or unknown answer', tpair, rec, p)
 
   def addcommentfin(self, cahash, cacode, *args, catry=1, **kvargs):
-    return self.addcomment(*args, cahash=cahash, cacode=cacode, catry=str(catry), **kvargs)
+    return self.addcomment(*args, cahash=cahash, cacode=cacode, catry=str(catry),
+      **kvargs)
 
   def ajax_addcomment(self, topicid, text, user=None, logined=True, **kvargs):
     '''Post message to topic'''
@@ -78,12 +78,12 @@ class Beon(object):
               'topic_id': topicid,
               'r': '',
               'message': text})
-    if self.logined == True and logined:
+    if self.logined is True and logined:
       p['user_type'] = ''
-    elif self.postuser != None:
+    elif self.postuser is not None:
       p['user_type'] = 'notanon'
       p['alogin'] = self.postuser
-      if self.postpass != None:
+      if self.postpass is not None:
         p['password'] = self.postpass
         p['authorize'] = 'on'
     else:
@@ -92,9 +92,9 @@ class Beon(object):
       p['blog_login'] = user
     p.update(kvargs)
     s = urlencode(p, to=self.commentenc).encode(self.commentenc)
-    s+= ('&add='+'Прoкoммeнтировaть Ctrl+Enter').encode(self.commentenc)
-    u = (construct_url('%s.%s'%(user, self.domain), (url.addcomment,)) if user
-           else construct_url(self.domain, (url.addcomment,)))
+    s += ('&add='+'Прoкoммeнтировaть Ctrl+Enter').encode(self.commentenc)
+    u = (construct_url(user+'.'+self.domain, (url.addcomment,)) if user
+        else construct_url(self.domain, (url.addcomment,)))
     rec = self.req(u, s).decode()
     if not rec:
         raise exc.EmptyAnswer('Empty response on ajax_addcomment to %s:%s',
@@ -113,10 +113,10 @@ class Beon(object):
            or rec == rsp.useronlysome
            or rec == rsp.useronlyvip
            or rec == rsp.useropblacklisted) if user
-           else (rec == rsp.onlyfriend
-                 or rec == rsp.onlysome
-                 or rec == rsp.onlyvip
-                 or rec == rsp.opblacklisted)):
+         else (rec == rsp.onlyfriend
+              or rec == rsp.onlysome
+              or rec == rsp.onlyvip
+              or rec == rsp.opblacklisted)):
       raise exc.UserDeny("%s:%s: This user can't post here", tpair, rec, p)
     elif (rec == rsp.userbumplimit if user
           else rec == rsp.bumplimit):
@@ -129,21 +129,21 @@ class Beon(object):
       raise exc.TopicDoesNotExist("Topic %s:%s does not exist", tpair, rec, p)
     else:
       raise exc.UnknownAnswer("%s:%s: Unknown answer", tpair, rec, p)
-    
+
   def delcomment(self, topic_id, comment_id, user=None):
     '''Delete comment from topic.'''
     query = formquery(topic_id=topic_id, comment_id=comment_id)
-    u = (construct_url('%s.%s'%(user, self.domain), (url.deletecomment,)) if user
-           else construct_url(self.domain, (url.deletecomment,)))
+    u = (construct_url(user+'.'+self.domain, (url.deletecomment,)) if user
+        else construct_url(self.domain, (url.deletecomment,)))
     return self.req('?'.join((u, query))).decode()
 
   def dellink(self, link_id, user=None):
     '''Delete link.'''
     query = formquery(link_id=link_id)
-    u = (construct_url('%s.%s'%(user, self.domain), (url.deletelink,)) if user
-           else construct_url(self.domain, (url.deletelink,)))
+    u = (construct_url(user+'.'+self.domain, (url.deletelink,)) if user
+        else construct_url(self.domain, (url.deletelink,)))
     return self.req('?'.join((u, query))).decode()
-  
+
   def reportspam(self, spam_type, spam_id, topic_id=None, user=None):
     '''Report spam. Types are: topic blog_topic comment blog_comment.'''
     query = (spam_type == 'topic' or spam_type == 'blog_topic'
@@ -152,23 +152,24 @@ class Beon(object):
              and topic_id
              and formquery(type=spam_type, id=spam_id, topic_id=topic_id)
              or False)
-    u = (construct_url('%s.%s'%(user, self.domain), (url.reportspam,)) if user
-           else construct_url(self.domain, (url.reportspam,)))
+    u = (construct_url(user+'.'+self.domain, (url.reportspam,)) if user
+        else construct_url(self.domain, (url.reportspam,)))
     return (query and self.req('?'.join((u, query))).decode())
-  
+
   def get_page(self, page, forum=None, user=None):
     '''Get page from user/forum.'''
-    if forum == None: forum = self.ptforum # '' is correct.
+    if forum is None:
+        forum = self.ptforum # '' is correct.
     u = (construct_url(user+'.'+self.domain, (page+'.html',)) if user
-           else construct_url(self.domain, (forum, page+'.html')))
+        else construct_url(self.domain, (forum, page+'.html')))
     return self.req(u).decode()
-  
+
   def getlinks(self, user):
     '''Get links from user.'''
-    u = construct_url('%s.%s'%(user, self.domain), ('links',''))
+    u = construct_url(user+'.'+self.domain, ('links', ''))
     page = self.req(u).decode()
     return re.findall(regexp.show_link_options, page)
-  
+
   def uploadimg(self, images, size='original', position='none'):
     p = postdata.uploadimg.copy()
     p.update({'image_url0': '',
@@ -179,41 +180,47 @@ class Beon(object):
     else:
       for i in range((len(images))):
         p.update({''.join(('image_file', str(i))): formfile(images.pop())})
-    u = construct_url('.'.join(('a%s'%self.a, self.domain)), (url.addimage,))
+    u = construct_url('a'+self.a+'.'+self.domain, (url.addimage,))
     res = self.req(u, p).decode()
 
     codes = set(re.findall(regexp.img_codes, res))
     print(res)
     print(codes)
     return codes
-          
+
   def uploadavatar(self, avatar_id, fileaddr):
     p = postdata.uploadavatar.copy()
     p.update({'avatar_id': avatar_id,
               'image_file': formfile(fileaddr)})
     u = construct_url(self.domain, (url.manageavatars,))
-    if self.logined: return self.req(u, p).decode()
-    else: raise exc.UsageError('You must be logined to change your avatar')
+    if self.logined:
+        return self.req(u, p).decode()
+    else:
+        raise exc.UsageError('You must be logined to change your avatar')
 
   def uploadbgm(self, bgm_file):
     p = postdata.uploadbgm.copy()
     p.update({'mp3_file': formfile(bgm_file)})
     u = construct_url(self.domain, (url.managebgm,))
-    if self.logined: return self.req(u, p).decode()
-    else: raise exc.UsageError('You must be logined to change your bgm')
-      
+    if self.logined:
+       return self.req(u, p).decode()
+    else:
+        raise exc.UsageError('You must be logined to change your bgm')
+
   def getposts(self, topicurl, forum=None, user=None):
     '''Get posts from topic.'''
-    if forum == None: forum = self.ptforum
-    u = (construct_url('%s.%s'%(user, self.domain), (forum, topicurl)) if user
-           else construct_url(self.domain, (forum, topicurl)))
+    if forum is None:
+       forum = self.ptforum
+    u = (construct_url(user+'.'+self.domain, (forum, topicurl)) if user
+        else construct_url(self.domain, (forum, topicurl)))
     return self.req(u).decode()
-  
-  def getpostsdict(self, topic, forum=None, user=None):
+
+  def getpostsdict(self, topicurl, forum=None, user=None):
     '''Get posts from topic. Returns posts in dict.'''
-    if forum == None: forum = self.ptforum
-    u = (construct_url('%s.%s'%(user, self.domain), (forum, topicurl)) if user
-           else construct_url(self.domain, (forum, topicurl)))
+    if forum is None:
+       forum = self.ptforum
+    u = (construct_url(user+'.'+self.domain, (forum, topicurl)) if user
+        else construct_url(self.domain, (forum, topicurl)))
     rec = self.req(u).decode()
     if rec:
       from .BeautifulSoup import BeautifulSoup
@@ -224,7 +231,8 @@ class Beon(object):
         _commentsdict.update({_trs[1].td.a['name']:
                               _trs[2].find(colspan='2')})
       return _commentsdict
-    else: return rec
+    else:
+        return rec
 
   def ajax_getposts(self, tid, lcid, adc='0', user=''):
     '''
@@ -237,8 +245,8 @@ class Beon(object):
               'lcid': lcid,
               'adc': adc})
     s = urlencode(p, to=self.ajaxenc).encode(self.ajaxenc)
-    u = (construct_url('%s.%s'%(user, self.domain), (url.ajax_getcomments,)) if user
-           else construct_url(self.domain, (url.ajax_getcomments,)))
+    u = (construct_url(user+'.'+self.domain, (url.ajax_getcomments,)) if user
+        else construct_url(self.domain, (url.ajax_getcomments,)))
     rsp = self.req(u, s).decode()
     data = {'posts': [], 'lcid': None, 'cookie': None, 'runChecker': None}
     data['posts'] = re.findall(regexp.getposts.addcomment, rsp)
@@ -263,13 +271,13 @@ class Beon(object):
     for post in posts:
       soup = BeautifulSoup(post)
       rposts.append({
-        'date': soup.fetch('tr')[1].fetch('font')[0].text,
-        'link': soup.fetch('tr')[1].fetch('font')[1].a['href'],
-        'html': soup.fetch('tr')[2].fetch('td')[1],
-        'plaintext': soup.fetch('tr')[2].fetch('td')[1].text,
-        })
+          'date': soup.fetch('tr')[1].fetch('font')[0].text,
+          'link': soup.fetch('tr')[1].fetch('font')[1].a['href'],
+          'html': soup.fetch('tr')[2].fetch('td')[1],
+          'plaintext': soup.fetch('tr')[2].fetch('td')[1].text,
+      })
     return rposts
-  
+
   def addtopicinc(self, text, forumid='122', subject='', user=None, **kvargs):
     '''Add topic to forum - initial stage.'''
     tpair = (forumid, user)
@@ -277,12 +285,12 @@ class Beon(object):
     p.update({'subject': subject,
               'forum_id': forumid,
               'message': text})
-    if self.logined == True:
+    if self.logined is True:
       p['user_type'] = 'logined'
-    elif self.postuser != None:
+    elif self.postuser is not None:
       p['user_type'] = 'notanon'
       p['alogin'] = self.postuser
-      if self.postpass != None:
+      if self.postpass is not None:
         p['password'] = self.postpass
         p['authorize'] = 'on'
     else:
@@ -290,7 +298,7 @@ class Beon(object):
     p.update(kvargs)
     s = urlencode(p, to=self.topicenc)
     u = (construct_url(user+'.'+self.domain, (url.addtopic,)) if user
-           else construct_url('a%s.%s'%(self.a, self.domain), (url.addtopic,)))
+        else construct_url('a'+self.a+'.'+self.domain, (url.addtopic,)))
     rec = self.req(u, s).decode()
     if rec == '':
         raise exc.Success('Topic to %s:%s posted: empty response', tpair, rec, p)
@@ -316,12 +324,12 @@ class Beon(object):
               'message': text,
               'cahash': cahash,
               'cacode': cacode})
-    if self.logined == True:
+    if self.logined is True:
       p['user_type'] = 'logined'
-    elif self.postuser != None:
+    elif self.postuser is not None:
       p['user_type'] = 'notanon'
       p['alogin'] = self.postuser
-      if self.postpass != None:
+      if self.postpass is not None:
         p['password'] = self.postpass
         p['authorize'] = 'on'
     else:
@@ -332,8 +340,8 @@ class Beon(object):
     except TypeError:
       print(p)
       raise
-    u = (construct_url('%s.%s'%(user, self.domain), (url.addtopic,)) if user
-           else construct_url('a%s.%s'%(self.a, self.domain), (url.addtopic,)))
+    u = (construct_url('a'+self.a+'.'+self.domain, (url.addtopic,)) if user
+        else construct_url('a'+self.a+'.'+self.domain, (url.addtopic,)))
     rec = self.req(u, s).decode()
     if rec == '':
       raise exc.Success('Topic to %s:%s posted: empty response', tpair, rec, p)
@@ -367,7 +375,8 @@ class Beon(object):
       else:
         raise exc.InvalidLogin('Invalid login %s:%s', (login, passwd), rec, s)
     else:
-      raise exc.EmptyAnswer('Empty response on logininc as %s:%s', (login, passwd), rec, p)
+      raise exc.EmptyAnswer('Empty response on logininc as %s:%s',
+        (login, passwd), rec, p)
 
   def loginfin(self, cahash, cacode,
                login, passwd, catry='1', **kvargs):
@@ -387,14 +396,25 @@ class Beon(object):
       if self.deobfuscate_html.search(rec):
         raise exc.Captcha(rec, 'We got a captcha on loginfin as %s:%s',
                           (login, passwd), p, catry=catry+1)
-      elif self.refound.search(rec): 
+      elif self.refound.search(rec):
         raise exc.Success('logined as %s:%s', (login, passwd), rec, p)
       elif self.bad_gateway.search(rec):
         raise exc.BadGateway('502 Bad Gateway', (login, passwd), rec, p)
       else:
         raise exc.InvalidLogin('Invalid login %s:%s', (login, passwd), rec, s)
     else:
-      raise exc.EmptyAnswer('Empty response on loginfin as %s:%s', (login, passwd), rec, p)
+      raise exc.EmptyAnswer('Empty response on loginfin as %s:%s',
+        (login, passwd), rec, p)
+
+  def logout(self):
+    rec = self.req(construct_url(
+        self.domain, (url.logout,), query={'r': self.ref})).decode()
+    if rec:
+      if self.refound.search(rec):
+          raise exc.Success('Logged out', (), rec)
+      raise exc.UnknownAnswer('Unknown answer on logout', (), rec)
+    else:
+        raise exc.EmptyAnswer('Empty response on logout', (), rec)
 
   def reginc(self, login, passwd, name, email, **kvargs):
     '''Registration. Initial stage.'''
@@ -408,8 +428,9 @@ class Beon(object):
               })
     p.update(kvargs)
     s = urlencode(p, to=self.regenc)
-    rec = self.req(construct_url('a%s.%s'%(self.a, self.domain), (url.register,)),
-                    s, onlyjar=True).decode()
+    rec = self.req(
+        construct_url('a'+self.a+'.'+self.domain, (url.register,)),
+        s).decode()
     if rec:
       if self.deobfuscate_html.search(rec):
         raise exc.Captcha(rec, 'We got a captcha on reginc as %s:%s',
@@ -437,20 +458,23 @@ class Beon(object):
               'cacode': cacode})
     p.update(kvargs)
     s = urlencode(p, to=self.regenc)
-    rec = self.req(construct_url('a%s.%s'%(self.a, self.domain), (url.register,)),
-                    s, onlyjar=True).decode()
+    rec = self.req(
+        construct_url('a'+self.a+'.'+self.domain, (url.register,)),
+        s).decode()
     if rec:
       if self.deobfuscate_html.search(rec):
         raise exc.Captcha(rec, 'We got a captcha on regfin as %s:%s',
                           (login, passwd), s, catry=catry+1)
-      elif self.refound.search(rec): 
+      elif self.refound.search(rec):
         raise exc.Success('Registred', (login, passwd), rec, s)
       elif self.bad_gateway.search(rec):
         raise exc.BadGateway('502 Bad Gateway', (login, passwd), rec, s)
       elif re.search(regexp.wait5min_register, rec):
-        raise exc.Wait5Min('We need to wait 5 min before retrying', (login, passwd), rec, s)
+        raise exc.Wait5Min('We need to wait 5 min before retrying',
+            (login, passwd), rec, s)
       else:
-        raise exc.EmptyAnswer('Empty response on regfin as %s:%s', (login, passwd), rec, s)
+        raise exc.EmptyAnswer('Empty response on regfin as %s:%s',
+            (login, passwd), rec, s)
     else:
       raise exc.EmptyAnswer('rec empty', (login, passwd), rec, s)
 
@@ -465,7 +489,7 @@ class Beon(object):
       raise exc.Success('Validation mail requested', '', rec)
     else:
       raise exc.UnknownError('No flag in answer', '', rec)
-    
+
   def validate_email_fin(self, hash_, **kvargs):
     if not self.logined:
       raise exc.UsageError('You must be logined to validate email address')
@@ -486,22 +510,24 @@ class Beon(object):
               'message': message})
     p.update(kvargs)
     s = urlencode(p, to=self.chatenc).encode(self.chatenc)
-    rec = self.req(construct_url('a%s.%s'%(self.a, self.domain),
-                                 (url.sendchatmessage if recipient.startswith('chat_')
-                                  else url.sendmessage)), s).decode()
-    if rec == rsp.chatsucces%recipient:
+    rec = self.req(construct_url('a'+self.a+'.'+self.domain,
+        (url.sendchatmessage if recipient.startswith('chat_')
+        else url.sendmessage)), s).decode()
+    if rec == rsp.chatsucces % recipient:
       raise exc.Success("Message to %s sent", recipient, rec, s)
     elif rec == rsp.chatredir:
-      raise exc.Redir("Recvd redir, captcha handling is not implemented", recipient, rec, s)
+      raise exc.Redir("Recvd redir, captcha handling is not implemented",
+        recipient, rec, s)
     else:
-      raise exc.UnknownAnswer("Unknown answer on ajax_sendmessage to %s", recipient, rec, s)
-  
-  #def getmessages
+      raise exc.UnknownAnswer("Unknown answer on ajax_sendmessage to %s",
+        recipient, rec, s)
+
+  # def getmessages
 
   def getonline_count(self):
     '''Returns (online, went_offline).'''
-    u = construct_url(self.domain, ('online',''))
-    page = self.req(url).decode()
+    u = construct_url(self.domain, ('online', ''))
+    page = self.req(u).decode()
     try:
       return [re.findall(r, page)[0] for r in ('Сейчас\s+?на\s+?сайте\s+?(\d+)\s+?',
                   'Только\s+?что\s+?с\s+?сайта\s+?(?:ушёл|ушли)\s+?(\d+)\s+?')]
@@ -510,16 +536,16 @@ class Beon(object):
 
   def find_user_status(self, page):
     '''Finds user status in page'''
-    ## font.m1:nth-child(41)
-    ## font.m2:nth-child(42)
+    # font.m1:nth-child(41)
+    # font.m2:nth-child(42)
     try:
       soup = BeautifulSoup(page)
       status = soup.body.find(text=re.compile('Статус: '))
       print(status)
-    except Exception as e:
+    except Exception:
       raise
-      #raise exc.UnknownAnswer('UnknownAnswer', 'user_status', page)
-    
+      # raise exc.UnknownAnswer('UnknownAnswer', 'user_status', page)
+
 # Other fun defuns.
 def addimg(link, size='original', position='none'):
   '''Add tags to img link.'''

@@ -522,6 +522,10 @@ class WipeSkel(object):
         with cstate(self, WipeState.registering):
             _regcount = 0
             while self.w.running.is_set():
+                cu = self.get_current_login()
+                if cu != 'guest':
+                    self.log.info('Our current login is %s', cu)
+                    self.logout()
                 self.w.p.poll(0)
                 ud = self.gen_userdata()
                 self.request_email(ud)
@@ -586,6 +590,14 @@ class WipeSkel(object):
 
     def get_current_login(self):
         return self.find_login(self.site.get_page('1'))
+
+    def logout(self):
+        try:
+            self.site.logout()
+        except beon.Success as e:
+            self.log.info(e)
+        except Exception as e:
+            self.log.error(e)
 
     def dologin(self):
         '''Choose user, do login and return it.'''
