@@ -6,9 +6,9 @@ from threading import Event
 import random, time, logging
 
 domain = 'mailinator.com'
-url_set = '/settttt'
-url_grab = '/grab'
+url_webinbox = '/api/webinbox'
 url_rendermail = '/rendermail.jsp'
+
 
 class Mailinator(object):
     def __init__(self, net, running=None, sleep=None):
@@ -35,17 +35,10 @@ class Mailinator(object):
         login = randstr(f, b, charset)
         return '@'.join((login, random.choice(self.get_domains())))
 
-    def _set(self, box, _time=None):
+    def _grab2(self, inbox, _time=None):
         _time = _time or str(int(time.time()))
-        u = construct_url(domain, (url_set,), {'box': box, 'time': _time})
-        rec = self.net.http_req(u)
-        return rec.json()
-
-    def _grab(self, inbox, address, _time=None):
-        _time = _time or str(int(time.time()))
-        u = construct_url(domain, (url_grab,), {'inbox': inbox,
-                                                'address': address,
-                                                'time': _time})
+        u = construct_url(domain, (url_webinbox,),
+                          {'to': inbox, 'time': _time})
         rec = self.net.http_req(u)
         return rec.json()
 
@@ -59,23 +52,12 @@ class Mailinator(object):
         username, domain = email.split('@', 1)
         self.log.info('Requesting messages for %s', username)
         sleeptime = 0
-        while self.running.is_set():
-            try:
-                address = self._set(username)['address']
-                break
-            except net.NetError as e:
-                self.log.error(e)
-                sleeptime += interval
-                self.sleep(interval)
-            except Exception as e:
-                self.log.exception(e)
-        self.log.info('Address for %s is %s', username, address)
         rlist = []
         while self.running.is_set():
             if sleeptime > timeout:
                 raise ValueError('No mail in here')
             try:
-                msgs = self._grab(username, address)
+                msgs = self._grab2(username)
             except net.HTTPError as e:
                 if not e.code == 404:
                     self.log.error(e)
@@ -90,16 +72,20 @@ class Mailinator(object):
             except Exception as e:
                 self.log.exception(e)
                 continue
-            if 'maildir' not in msgs or len(msgs['maildir']) == 0:
+            if 'messages' not in msgs or len(msgs['messages']) == 0:
+                self.log.debug('No messages found')
                 sleeptime += interval
                 self.sleep(interval)
                 continue
-            for i in msgs['maildir']:
-                if 'priv' in i:
-                    sleeptime += interval
-                    self.sleep(interval)
+            for i in msgs['messages']:
+                # if 'priv' in i: # what is this for?
+                #     sleeptime += interval
+                #     self.sleep(interval)
+                #     continue
+                if 'been_read' in i and i['been_read'] is True:
                     continue
                 if i['fromfull'].startswith('reminder'):
+                    self.log.info('Found unread message from %s, %ds ago', i['fromfull'], i['seconds_ago'])
                     rlist.append({'mail_from': i['fromfull'],
                                   'mail_html': self._render(i['id']).decode('cp1251')})
             if len(rlist) > 0:
