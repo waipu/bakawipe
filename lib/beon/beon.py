@@ -485,8 +485,10 @@ class Beon(object):
     p.update(kvargs)
     u = construct_url(self.domain, (url.validate_user_email,), p)
     rec = self.req(u).decode()
-    if rec.find('<p>Письмо успешно отправлено</p>'):
+    if rsp.mail_success in rec:
       raise exc.Success('Validation mail requested', '', rec)
+    elif rsp.mail_server_connection_error in rec:
+      raise exc.BadGateway('Error while connecting to the server', '', rec)
     else:
       raise exc.UnknownError('No flag in answer', '', rec)
 
@@ -546,10 +548,14 @@ class Beon(object):
       raise
       # raise exc.UnknownAnswer('UnknownAnswer', 'user_status', page)
 
+
 # Other fun defuns.
+
+
 def addimg(link, size='original', position='none'):
   '''Add tags to img link.'''
   return ''.join(('[', '-'.join(('image', size, position, link)), ']'))
+
 
 def make_topic_url(domain, id_, forum='', user=''):
     if len(id_) > 3:

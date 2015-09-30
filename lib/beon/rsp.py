@@ -22,10 +22,12 @@ useronlymember = 'ERRORКомментировать запись могут то
 useronlysome = 'ERRORКомментировать запись могуг только пользователи, заданные автором записи.' # Only some users can post.
 useronlyvip = 'ERRORКомментировать запись могут только VIP-пользователи.' # Only vip-users can post.
 userclosed = 'ERRORЗапись закрыта. Комментировать её нельзя.'
-    
+
 succes = '1'
 othersucces = 'HIDE1' # From 1k comments.
 
 chatredir = 'REDIR'
 chatsucces = 'CLEAR%s' # chatname
-    
+
+mail_success = 'Письмо успешно отправлено'
+mail_server_connection_error = 'Ошибка соединения с сервером, попробуйте позднее'

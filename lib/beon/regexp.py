@@ -1,8 +1,8 @@
 ''' '''
 # targetregexp = r'\/{forum}\/(\d*)-(\d*)\-[\w|\-]*([vb]-?i*-?r-?t|se(?:x|ks|kas)|eb(?:at|i)|t-?r-?a-?h|(?:-ja|ischu)-(?:m\-|j\-|zh\-|devushk|par(?:en|nja)|hozja)|ots[o|\-]s|rolevit|-sis[\-|e][kc]|v(?:-pop|du(?:i\-|va))|rabyn|droch|[ob]?liz(?:at\-|va[it])|hentai|shlju(?:hu|shk)|kisk[au]-(?:vsja|mokr)|do-orgazm|shali|min-?et|nakaz(?:iva|hi|at)|(?:parni|devushki)-kto-hochet|hoch(?:u|esh)-tak-)[\w|\-]*\-read\.shtml'
-s_id = r'(\d+)\-(\d+)\-[\w\-]*(?:\-read)?\.[sz]html'
-s_topic = r'(\d+-\d+\-[\w|\-]*(?:\-read)?\.[sz]html)'
-s_uni = r'((\d+)-(\d+)\-[\w|\-]*(?:\-read)?\.[sz]html)'
+s_id = r'(\d+)\-(\d+)\-[\w\-]*(?:\-read)?\.[sz]?html'
+s_topic = r'(\d+-\d+\-[\w|\-]*(?:\-read)?\.[sz]?html)'
+s_uni = r'((\d+)-(\d+)\-[\w|\-]*(?:\-read)?\.[sz]?html)'
 
 ud_prefix = r'http:\/\/(?:(\w+)\.)?(\w+\.\w+)\/(?:[\w._-]+\/)?'
 udf_prefix = r'http:\/\/(?:(\w+)\.)?(\w+\.\w+)\/(?:([\w._-]+)\/)?'
@@ -31,6 +31,7 @@ img_codes = r'(\[image-original-none-[\w:\.\/]+?\])'
 deobfuscate_html = r'<script.*?>.*?dеobfuscate_html\s*?\(.*?\).*?<\/script>'
 r302_found = r'302 Found'
 r502_bad_gateway = r'502 Bad Gateway'
+
 
 class getposts:
     addcomment = r"AddComment\s*?\(\s*?[\'\"](.+?)[\'\"]\s*?\)\s*?;"
