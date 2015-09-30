@@ -7,6 +7,7 @@ from beon import exc, regexp
 from collections import ChainMap
 import re
 
+
 class UniWipe(WipeSkel):
     def __init__(self, forums, targets, sbjfun, msgfun, *args, **kvargs):
         self.sbjfun = sbjfun
@@ -17,8 +18,8 @@ class UniWipe(WipeSkel):
                         or targets)
         super().__init__(*args, **kvargs)
         self.ignore_map = ChainMap(
-            self.pc.sets['closed'], self.pc.sets['bumplimit'],
-            self.pc.sets['bugged'], self.pc.sets['protected'],
+            self.get_set('closed'), self.get_set('bumplimit'),
+            self.get_set('bugged'), self.get_set('protected'),
             self.targets)
 
     def on_caprate_limit(self, rate):
@@ -45,16 +46,16 @@ class UniWipe(WipeSkel):
                 self.postmsg(t[1], msg, t[0])
             except exc.Success as e:
                 self.counters['comments'] += 1
-                self.w.sleep(self.comment_successtimeout)
+                self.w.sleep(self.comment_successwait)
             except exc.Antispam as e:
-                self.w.sleep(self.comment_successtimeout)
+                self.w.sleep(self.comment_successwait)
                 self.schedule(self.add_comment, (t, msg))
-            except (exc.Closed, exc.UserDeny) as e:
+            except (exc.Closed, exc.UserDeny, exc.Bumplimit) as e:
                 try:
                     self.targets.remove(t)
                 except ValueError:
                     pass
-                self.w.sleep(self.comment_successtimeout)
+                self.w.sleep(self.comment_successwait)
             except exc.Captcha as e:
                 self.log.error('Too many wrong answers to CAPTCHA')
                 self.switch_user()
@@ -67,60 +68,69 @@ class UniWipe(WipeSkel):
                 self.schedule_first(self.switch_user)
             except exc.EmptyAnswer as e:
                 self.log.info('Removing %s from targets and adding to bugged', t)
-                self.pc.sets['bugged'].add(t)
-                self.pc.add_waiting('bugged', t, 86400)
+                self.add_waiting('bugged', t, 86400)
                 try:
                     self.targets.remove(t)
                 except ValueError as e:
                     pass
-                self.w.sleep(self.errortimeout)
+                self.w.sleep(self.errorwait)
             except exc.TopicDoesNotExist as e:
                 self.log.info('Removing %s from targets and adding to bugged', t)
-                self.pc.sets['bugged'].add(t)
-                self.pc.add_waiting('bugged', t, 86400)
+                self.add_waiting('bugged', t, 86400)
                 try:
                     self.targets.remove(t)
                 except ValueError as e:
                     pass
-                self.w.sleep(self.errortimeout)
+                self.w.sleep(self.errorwait)
             except exc.TemporaryError as e:
                 self.schedule(self.add_comment, (t, msg))
-                self.w.sleep(self.errortimeout)
+                self.w.sleep(self.errorwait)
             except exc.PermanentError as e:
                 try:
                     self.targets.remove(t)
                 except ValueError as e:
                     pass
-                self.w.sleep(self.errortimeout)
+                self.w.sleep(self.errorwait)
             except UnicodeDecodeError as e:
                 self.log.exception(e)
-                self.w.sleep(self.errortimeout)
+                self.w.sleep(self.errorwait)
 
     def forumwipe_loop(self):
         for f in self.forums.copy():
+            if f[0] != '' or f[1] == '':
+                # ignore users for now
+                continue
+            forum_id = self.get_forum_id(f[1])
             self.counter_tick()
             try:
-                self.addtopic(self.msgfun(), self.sbjfun(), f)
+                self.addtopic(self.msgfun(), self.sbjfun(), forum_id, f[0])
             except exc.Success as e:
                 self.counters['topics'] += 1
-                self.w.sleep(self.topic_successtimeout)
+                self.w.sleep(self.topic_successwait)
             except exc.Wait5Min as e:
-                self.topic_successtimeout = self.topic_successtimeout + 0.1
-                self.log.info('Wait5Min exc caught, topic_successtimeout + 0.1, cur: %f',
-                    self.topic_successtimeout)
-                self.w.sleep(self.topic_successtimeout)
+                self.topic_successwait = self.topic_successwait + 0.1
+                self.log.info('Wait5Min exc caught, topic_successwait + 0.1, cur: %f',
+                    self.topic_successwait)
+                self.w.sleep(self.topic_successwait)
             except exc.Captcha as e:
                 self.log.error('Too many wrong answers to CAPTCHA')
                 self.long_sleep(10)
             except exc.UnknownAnswer as e:
                 self.log.warning('%s: %s', e, e.answer)
-                self.w.sleep(self.errortimeout)
+                self.w.sleep(self.errorwait)
             except exc.PermanentError as e:
                 self.log.error(e)
-                self.w.sleep(self.errortimeout)
+                self.w.sleep(self.errorwait)
             except exc.TemporaryError as e:
                 self.log.warn(e)
-                self.w.sleep(self.errortimeout)
+                self.w.sleep(self.errorwait)
+        if len(self.forums) > 0:
+            self.schedule(self.forumwipe_loop)
+        else:
+            self.schedule(self.wait_loop)
+
+    def get_forum_id(self, name):
+        return self.pc.forum_id_table.get_key(name)
 
     def get_targets(self):
         found_count = 0
@@ -164,6 +174,7 @@ class UniWipe(WipeSkel):
                     self.counter_tick()
                     self.w.sleep(1)
         self.schedule(self.scan_targets_loop)
+        # self.schedule(self.forumwipe_loop)
 
     def _run(self):
         self.schedule(self.dologin)
@@ -186,9 +197,9 @@ class UniWipe(WipeSkel):
 #     if not tw_flag:
 #         tw_flag = True
 # if tw_flag:
-#     # Sleep for topic_successtimeout after last comment
-#     # to prevent a timeout spike
-#     self.w.sleep(self.topic_successtimeout)
+#     # Sleep for topic_successwait after last comment
+#     # to prevent a wait spike
+#     self.w.sleep(self.topic_successwait)
 #     tw_flag = False
 # with cstate(self, WipeState.posting_topic):
 # self.forumwipe_loop()

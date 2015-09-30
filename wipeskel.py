@@ -2,33 +2,41 @@
 # -*- mode: python -*-
 import logging, re
 from queue import Queue, Empty
+from random import randint
+from threading import Lock
 import zmq
 import beon, sup, wzrpc
 from beon import regexp
 from wzworkers import WorkerInterrupt
 from ocr import OCRError, PermOCRError, TempOCRError
+from ocr.hands import hands_solve
+from ocr.util import save_img
 from sup.ticker import Ticker
 from userdata import short_wordsgen
 from enum import Enum
 from collections import Counter, deque
 
+
 class ProcessContext:
-    def __init__(self, name, ctx, wz_addr, noproxy_rp):
+    def __init__(self, name, ctx, wz_addr, noproxy_rp, forum_id_table):
         self.log = logging.getLogger('.'.join((name, type(self).__name__)))
+        self.waiting_lock = Lock()
         self.zmq_ctx = ctx
         self.ticker = Ticker()
         self.sets = {}
-        self.sets['waiting'] = dict()
-        self.sets['pending'] = set()
-
-        self.sets['targets'] = set()
-        self.sets['closed'] = set()
-        self.sets['bumplimit'] = set()
-        self.sets['protected'] = set()
-        self.sets['bugged'] = set()
+        self.waiting = dict()
+        self.sets['pending'] = set() # set for pending users
 
         self.wz_addr = wz_addr
         self.noproxy_rp = noproxy_rp
+        self.forum_id_table = forum_id_table
+
+    def ensure_shared_set(self, name):
+        with self.waiting_lock:
+            if name not in self.sets:
+                self.sets[name] = set()
+                self.log.info('Created shared set "{0}"'.format(name))
+        return True
 
     def make_wz_sock(self):
         self.log.debug('Initializing WZRPC socket')
@@ -39,21 +47,30 @@ class ProcessContext:
 
     def check_waiting(self):
         elapsed = self.ticker.elapsed()
-        waiting = self.sets['waiting']
-        for k, v in waiting.copy().items():
-            rem = v - elapsed
-            if rem <= 0:
-                del waiting[k]
-                self.log.info('Removing %s from %s', k[0], k[1])
-                try:
-                    self.sets[k[1]].remove(k[0])
-                except KeyError:
-                    self.log.error('No %s in %s', k[0], k[1])
-            else:
-                waiting[k] = rem
+        with self.waiting_lock:
+            for k, v in self.waiting.copy().items():
+                rem = v - elapsed
+                if rem <= 0:
+                    del self.waiting[k]
+                    self.log.debug('Removing %s from %s', k[0], k[1])
+                    try:
+                        self.sets[k[1]].remove(k[0])
+                    except KeyError:
+                        self.log.error('No %s in %s', k[0], k[1])
+                else:
+                    self.waiting[k] = rem
 
     def add_waiting(self, sname, item, ttl):
-        self.sets['waiting'][(item, sname)] = ttl
+        i = (item, sname)
+        with self.waiting_lock:
+            if i not in self.waiting:
+                self.sets[sname].add(item)
+                self.waiting[i] = ttl
+                self.log.debug('Added (%s, %s): %f to waiting', item, sname, ttl)
+            else:
+                self.log.debug('(%s, %s) is already in waiting dict', item, sname)
+        return True
+
 
 class WTState(Enum):
     null = 0
@@ -61,6 +78,7 @@ class WTState(Enum):
     empty = 3
     sleeping = 4
     running = 5
+
 
 class WipeState(Enum):
     null = 0
@@ -84,6 +102,7 @@ class WipeState(Enum):
     posting_comment = 53
     posting_topic = 54
 
+
 class state:
     def __init__(self, defstate):
         self.defstate = defstate
@@ -106,6 +125,7 @@ class state:
     @property
     def value(self):
         return self.state.value
+
 
 class cstate:
     def __init__(self, obj, state):
@@ -151,54 +171,57 @@ class WipeThread:
             timeout=60)
         return tuple(result)
 
-    def solve_captcha(self, img):
-        result = []
-        def accept(that, reqid, seqnum, status, data):
-            if status == wzrpc.status.success or status == wzrpc.status.error:
-                if seqnum > 0:
-                    if len(data) == 1:
-                        self.log.info('Solver: captcha has been %s',
-                            data[0].decode('utf-8'))
-                    else:
-                        self.log.warn('Unknown captcha status: %s', repr(data))
-                    return
-                result.extend(data)
-            elif status == wzrpc.status.e_req_denied:
-                self.log.warn('Status {0}, reauthentificating'.
-                    format(wzrpc.name_status(status)))
-                self.p.auth_requests()
-                that.retry = True
-            elif status == wzrpc.status.e_timeout:
-                self.log.warn('Timeout {0}, retrying'.format(data[0]))
-                that.retry = True
-            else:
-                self.log.warn('Status {0}, retrying'.format(wzrpc.name_status(status)))
-                that.retry = True
-        self.p.wz_wait_reply(accept,
-            b'Solver', b'solve', (b'inbound', img), timeout=300)
-        if len(result) > 1:
-            if result[0] == b'result':
-                # Do we need to decode it?
-                return result[1].decode('utf-8'), result[2].decode('utf-8')
-            elif result[0] == b'error':
-                raise OCRError('Solver returned error %s', result[1].decode('utf-8'))
-        raise OCRError('Solver returned strange status %s', repr(result))
+    # def solve_captcha(self, img):
+    #     result = []
+    #     def accept(that, reqid, seqnum, status, data):
+    #         if status == wzrpc.status.success or status == wzrpc.status.error:
+    #             if seqnum > 0:
+    #                 if len(data) == 1:
+    #                     self.log.info('Solver: captcha has been %s',
+    #                         data[0].decode('utf-8'))
+    #                 else:
+    #                     self.log.warn('Unknown captcha status: %s', repr(data))
+    #                 return
+    #             result.extend(data)
+    #         elif status == wzrpc.status.e_req_denied:
+    #             self.log.warn('Status {0}, reauthentificating'.
+    #                 format(wzrpc.name_status(status)))
+    #             self.p.auth_requests()
+    #             that.retry = True
+    #         elif status == wzrpc.status.e_timeout:
+    #             self.log.warn('Timeout {0}, retrying'.format(data[0]))
+    #             that.retry = True
+    #         else:
+    #             self.log.warn('Status {0}, retrying'.format(wzrpc.name_status(status)))
+    #             that.retry = True
+    #     self.p.wz_wait_reply(accept,
+    #         b'Solver', b'solve', (b'inbound', img), timeout=600)
+    #     if len(result) > 1:
+    #         if result[0] == b'result':
+    #             # Do we need to decode it?
+    #             return result[1].decode('utf-8'), result[2].decode('utf-8')
+    #         elif result[0] == b'error':
+    #             raise OCRError('Solver returned error %s', result[1].decode('utf-8'))
+    #     raise OCRError('Solver returned strange status %s', repr(result))
+
+    # def report_code(self, cid, status):
+    #     def accept(that, reqid, seqnum, status, data):
+    #         if status == wzrpc.status.success:
+    #             self.log.debug('Successfully reported captcha status')
+    #         elif status == wzrpc.status.error:
+    #             self.log.error('Solver returned error on report: %s', repr(data))
+    #         elif status == wzrpc.status.e_req_denied:
+    #             self.log.warn('Status {0}, reauthentificating'.
+    #                 format(wzrpc.name_status(status)))
+    #             self.p.auth_requests()
+    #         else:
+    #             self.log.warn('Status {0}, retrying'.format(wzrpc.name_status(status)))
+    #             that.retry = True
+    #     self.p.wz_wait_reply(accept,
+    #         b'Solver', b'report', (status.encode('utf-8'), cid.encode('utf-8')))
 
     def report_code(self, cid, status):
-        def accept(that, reqid, seqnum, status, data):
-            if status == wzrpc.status.success:
-                self.log.debug('Successfully reported captcha status')
-            elif status == wzrpc.status.error:
-                self.log.error('Solver returned error on report: %s', repr(data))
-            elif status == wzrpc.status.e_req_denied:
-                self.log.warn('Status {0}, reauthentificating'.
-                    format(wzrpc.name_status(status)))
-                self.p.auth_requests()
-            else:
-                self.log.warn('Status {0}, retrying'.format(wzrpc.name_status(status)))
-                that.retry = True
-        self.p.wz_wait_reply(accept,
-            b'Solver', b'report', (status.encode('utf-8'), cid.encode('utf-8')))
+        pass
 
     def __call__(self, parent):
         self.p = parent
@@ -250,6 +273,7 @@ class WipeThread:
                     self.spawnqueue.task_done()
         cst.__exit__(None, None, None)
 
+
 class WipeSkel(object):
     reglimit = 10
     loglimit = 10
@@ -259,15 +283,15 @@ class WipeSkel(object):
     caprate = 0
     caprate_minp = 10
     caprate_limit = 0.9
-    successtimeout = 1
-    comment_successtimeout = 0
-    topic_successtimeout = 0.8
+    successwait = 1
+    comment_successwait = 0
+    topic_successwait = 0.8
     counter_report_interval = 30
     target_cps = 4.15
     cps_adjuction_step_min = 0.01
     cps_adjuction_precission = 0.1
     cps_adjuction_scale = 3
-    errortimeout = 3
+    errorwait = 3
     uqtimeout = 5  # Timeout for userqueue
     stoponclose = True
     die_on_neterror = False
@@ -302,6 +326,15 @@ class WipeSkel(object):
         else:
             self.userqueue = Queue()
 
+        for name in ('targets', 'closed', 'bumplimit', 'protected', 'bugged'):
+            self.pc.ensure_shared_set(self.site.domain+name)
+
+    def get_set(self, sname):
+        return self.pc.sets[self.site.domain+sname]
+
+    def add_waiting(self, sname, item, ttl):
+        return self.pc.add_waiting(self.site.domain+sname, item, ttl)
+
     def schedule(self, task, args=(), kvargs={}):
         self.task_deque.appendleft((task, args, kvargs))
 
@@ -312,6 +345,7 @@ class WipeSkel(object):
         with cstate(self, WipeState.running):
             while self.w.running.is_set():
                 self.counter_tick()
+                self.w.p.poll(0)
                 try:
                     t = self.task_deque.pop()
                 except IndexError:
@@ -339,7 +373,7 @@ class WipeSkel(object):
                     if self.die_on_neterror and _conc > self.conlimit:
                         raise
                     self.log.warn('%s, waiting. t: %s', e.args[0], _conc)
-                    self.w.sleep(self.errortimeout)
+                    self.w.sleep(self.errorwait)
                 else:
                     self.log.error('%d %s', e.ec, e.args[0])
                     if self.die_on_neterror:
@@ -371,17 +405,17 @@ class WipeSkel(object):
             self.on_caprate_limit(self.caprate)
             # if self.getuser() == 'guest':
             #     self.log.info("lol, we were trying to post from guest")
-            #     while not self.relogin(): self.w.sleep(self.errortimeout)
+            #     while not self.relogin(): self.w.sleep(self.errorwait)
             # else:
-            #     while not self.dologin(): self.w.sleep(self.errortimeout)
+            #     while not self.dologin(): self.w.sleep(self.errorwait)
 
-    def adjuct_comment_successtimeout(self, cps):
+    def adjuct_comment_successwait(self, cps):
         step = self.cps_adjuction_step_min
         prec = self.cps_adjuction_precission
         scale = self.cps_adjuction_scale
         diff = self.target_cps - cps
         if diff > prec:
-            if self.comment_successtimeout == 0:
+            if self.comment_successwait == 0:
                 # Nothing to adjuct here.
                 return
             if diff * scale > 1:
@@ -393,12 +427,12 @@ class WipeSkel(object):
                 step = -step
         else:
             return
-        if step > self.comment_successtimeout:
-            self.comment_successtimeout = 0
+        if step > self.comment_successwait:
+            self.comment_successwait = 0
         else:
-            self.comment_successtimeout -= step
+            self.comment_successwait -= step
         self.log.info(
-            'Difference from target cps is %f, adjucting timeout by %f',
+            'Difference from target cps is %f, adjucting wait by %f',
             diff, step)
 
     def counter_tick(self):
@@ -416,7 +450,7 @@ class WipeSkel(object):
                 self.counters['comments'] = 0
                 if self.target_cps:
                     if (e - self.counter_report_interval) < 5:
-                        self.adjuct_comment_successtimeout(cps)
+                        self.adjuct_comment_successwait(cps)
                     else:
                         self.log.debug('Elapsed > interval by > 5, skipping adjuction')
             if tcount > 0:
@@ -471,7 +505,7 @@ class WipeSkel(object):
                         cahash, cacode, cid = self.solve_captcha(_page)
                 except TempOCRError as e:
                     self.log.error('OCRError: %s, retrying', e)
-                    self.w.sleep(self.errortimeout)
+                    self.w.sleep(self.errorwait)
                     continue
                 except OCRError as e:
                     self.log.error('OCRError: %s, requesting new captcha', e)
@@ -509,13 +543,13 @@ class WipeSkel(object):
                     r()
                     raise
 
-    def adaptive_timeout_wrapper(self, fun, *args, **kvargs):
+    def adaptive_wait_wrapper(self, fun, *args, **kvargs):
         try:
             return fun(*args, **kvargs)
-        except beon.Antispam as e:
-            self.log.info('Antispam exc caught, successtimeout + 0.1, cur: %f',
-                          self.successtimeout)
-            self.successtimeout = self.successtimeout + 0.1
+        except beon.Antispam:
+            self.log.info('Antispam exc caught, successwait + 0.1, cur: %f',
+                          self.successwait)
+            self.successwait = self.successwait + 0.1
             raise
 
     def register_new_user(self):
@@ -555,7 +589,7 @@ class WipeSkel(object):
                         raise beon.RegRetryLimit('Cannot register new user')
                     self.log.error('%s, userdata may be invalid, retrying c:%d',
                                 e, _regcount)
-                    self.w.sleep(self.errortimeout)
+                    self.w.sleep(self.errorwait)
             else:
                 raise WorkerInterrupt()
 
@@ -618,7 +652,7 @@ class WipeSkel(object):
                 self.validate_email(self.site.ud)
                 for c in self.hooks['post_login']:
                     c(self, self.site.ud)
-                self.w.sleep(self.successtimeout)
+                self.w.sleep(self.successwait)
                 return
             except beon.Captcha as e:
                 self.log.error('Too many wrong answers to CAPTCHA')
@@ -627,12 +661,12 @@ class WipeSkel(object):
             except beon.InvalidLogin as e:
                 self.log.error("Invalid login, passing here")
                 self.schedule(self.dologin)
-                self.w.sleep(self.errortimeout)
+                self.w.sleep(self.errorwait)
             except beon.TemporaryError as e:
                 self.userqueue.put(self.site.ud)
                 self.log.warn(e)
                 self.schedule(self.dologin)
-                self.w.sleep(self.errortimeout)
+                self.w.sleep(self.errorwait)
         # else:
         #     pending = len(self.pc.sets['pending'])
         #     self.log.warn("No more logins here, %s pending."%pending)
@@ -648,15 +682,15 @@ class WipeSkel(object):
                 except beon.Success as e:
                     for c in self.hooks['post_login']:
                         c(self, self.site.ud)
-                    self.w.sleep(self.successtimeout)
+                    self.w.sleep(self.successwait)
                     return
                 except beon.InvalidLogin as e:
                     self.log.error(e)
-                    self.w.sleep(self.errortimeout)
+                    self.w.sleep(self.errorwait)
                     break
                 except beon.TemporaryError as e:
                     self.log.warn(e)
-                    self.w.sleep(self.errortimeout)
+                    self.w.sleep(self.errorwait)
                     continue
         self.dologin()
 
@@ -675,11 +709,17 @@ class WipeSkel(object):
             or ud[0]['email_validated'] is True):
             return
         if not ud[0]['email_requested']:
-            try:
-                self.site.validate_email_inc()
-            except beon.Success as e:
-                ud[0]['email_requested'] = True
-                self.log.info(e)
+            self.log.info('Requesting a validation email')
+            while True:
+                try:
+                    self.site.validate_email_inc()
+                except beon.Success as e:
+                    ud[0]['email_requested'] = True
+                    self.log.info(e)
+                    break
+                except beon.BadGateway as e:
+                    self.log.warning(e)
+                    self.w.sleep(self.errorwait)
         self.log.info('Requesting messages for %s', ud['email'])
         messages = self.mailrequester.get_messages(ud['email'])
         for msg in messages:
@@ -731,9 +771,9 @@ class WipeSkel(object):
             raise
         except beon.Antispam as e:
             self.counters['antispam'] += 1
-            self.comment_successtimeout = self.comment_successtimeout + 0.1
-            self.log.info('Antispam exc caught, comment_successtimeout + 0.1, cur: %f',
-                self.comment_successtimeout)
+            self.comment_successwait = self.comment_successwait + 0.1
+            self.log.info('Antispam exc caught, comment_successwait + 0.1, cur: %f',
+                self.comment_successwait)
             raise
         except beon.GuestDeny as e:
             self.counters['delogin'] += 1
@@ -742,18 +782,17 @@ class WipeSkel(object):
             raise
         except beon.Bumplimit as e:
             self.log.info(e)
-            self.pc.sets['bumplimit'].add(tpair)
-            self.pc.add_waiting('bumplimit', tpair, 86400)
+            self.add_waiting('bumplimit', tpair, randint(600, 86400))
             raise
         except (beon.Closed, beon.UserDeny) as e:
-            self.pc.sets['closed'].add(tpair)
             if self.stoponclose:
                 self.log.info(e)
-                self.pc.add_waiting('closed', tpair, 86400)
+                self.add_waiting('closed', tpair, randint(600, 86400))
                 raise beon.PermClosed("%s:%s is closed", tpair, e.answer)
             else:
-                self.log.info('%s, starting 300s remove timer', e)
-                self.pc.add_waiting('closed', tpair, 300)
+                wt = randint(60, 600)
+                self.log.info('%s, starting %ds timer', e, wt)
+                self.add_waiting('closed', tpair, wt)
                 raise
         except beon.Wait5Min as e:
             self.counters['wait5mincount'] += 1
@@ -781,8 +820,7 @@ class WipeSkel(object):
             # if 'login' in self.site.ud:
             #     self.log.warn(e)
             #     self.log.warn('Trying to change user')
-            #     self.pc.sets['pending'].add(self.site.ud['login'])
-            #     self.pc.add_waiting('pending', self.site.ud['login'], 300)
+            #     self.add_waiting('pending', self.site.ud['login'], 300)
             #     self.dologin()
             # else:
             #     raise
@@ -812,16 +850,18 @@ class WipeSkel(object):
         self.log.info('Answer: %s', repr(capair))
         if len(capair) != 2:
             raise PermOCRError('Invalid answer from Evaluator')
-        self.log.info('Downloading captcha image')
         try:
+            self.log.info('Downloading captcha image')
             img = self.http_request(capair[1])
+            ipath = save_img(img, capair[1].partition('://')[2], 'temp/hands')
+            # self.log.info('Sending captcha image to solver')
+            # result, cid = self.w.solve_captcha(img)
+            result = hands_solve(ipath)
+            cid = ''
         except sup.net.HTTPError as e:
             # check error code here
             self.log.error(e)
             raise PermOCRError('404 Not Found on caurl', cahash=capair[0])
-        self.log.info('Sending captcha image to solver')
-        try:
-            result, cid = self.w.solve_captcha(img)
         except OCRError as e:
             e.cahash = capair[0]
             raise

@@ -53,9 +53,12 @@ def message():
     #            random.choice(('3odl-KoNZwk', 'bu55q_3YtOY', '4YPiCeLwh5o',
     #                           'eSBybJGZoCU', 'ZtWTUt2RZh0', 'VXa9tXcMhXQ',))
     #            +']')
-    msg.append('[image-original-none-http://simg4.gelbooru.com/'
-               + '/images/db/1d/db1dfb62a40f5ced2043bb8966da9a98.png]')
+    msg.append('[image-original-none-http://simg4.gelbooru.com'
+               + '/images/e0/a0/e0a0c1b49e567690203a35651fdb126b.png'+']')
     msg.append('Каждый хочет дружить с ядерной бомбой.')
+    # msg.append('[image-original-none-http://gelbooru.com//images/61/28/6128dc14ee3bb5d3ab1a32eeef339bb9.jpg]')
+    # msg.append('Do you want to be friends with a bomb?')
+    # msg.append('[video-youtube-OXGc2geyYyI]')
     # msg.append('[video-youtube-'+random.choice(
     #     # ('WdDb_RId-xU', 'EFL1-fL-WtM', 'uAOoiIkFQq4',
     #     #  'eZO3K_4yceU', '1c1lT_HgJNo', 'WOkvVVaJ2Ks',
@@ -66,7 +69,10 @@ def message():
     # +']')
     # http://simg2.gelbooru.com//images/626/58ca1c9a8ffcdedd0e2eb6f33c9389cb7588f0d1.jpg
     # msg.append('Enjoy the view!')
-    msg.extend(wordsgen.gen_word() for x in range(0, random.randint(0, 10)))
+    for i in range(1, 10):
+        msg.append(' '.join(
+            wordsgen.gen_word() for x in range(0, random.randint(0, 10))
+        ).capitalize()+'.')
     return '\n'.join(msg)
 
 def sbjfun():
@@ -109,23 +115,23 @@ parser.add_argument('--caprate_limit', type=float, default=0.8,
 parser.add_argument('--catrymax', type=int, default=3,
     help='Max captcha retries with the same postdata')
 
-parser.add_argument('--comment_successtimeout', type=float, default=0.2,
-    help='Comment success timeout')
-parser.add_argument('--topic_successtimeout', type=float, default=0.8,
-    help='Topic success timeout')
-parser.add_argument('--successtimeout', type=float, default=1,
-    help='Success timeout')
-parser.add_argument('--errortimeout', type=float, default=3,
-    help='Error timeout')
+parser.add_argument('--comment_successwait', type=float, default=0.2,
+    help='Comment success wait')
+parser.add_argument('--topic_successwait', type=float, default=0.8,
+    help='Topic success wait')
+parser.add_argument('--successwait', type=float, default=1,
+    help='Success wait')
+parser.add_argument('--errorwait', type=float, default=3,
+    help='Error wait')
 
 parser.add_argument('--target-cps', type=float, default=4.15,
     help='Target comments per second rate, 0 to disable')
 parser.add_argument('--cps-adjuction-step-min', type=float, default=0.01,
-    help='Base comment_successtimeout ajuction step')
+    help='Base comment_successwait ajuction step')
 parser.add_argument('--cps-adjuction-scale', type=float, default=3,
-    help='Scale for comment_successtimeout ajuction diff')
+    help='Scale for comment_successwait ajuction diff')
 parser.add_argument('--counter-report-interval', type=int, default=30,
-    help='Counter report and timeout adjuction interval')
+    help='Counter report and wait adjuction interval')
 
 parser.add_argument('--stop-on-closed', action='store_true', default=False,
     help='Forget about closed topics')
@@ -148,6 +154,7 @@ d = DataLoader(noproxy_rp, c.only_cache)
 c.router_addr = d.addrs['rpcrouter']
 noproxy_rp.useragent = random.choice(d.ua_list)
 
+
 def terminate():
     logger.info('Shutdown initiated')
     # send_passthrough([b'GLOBAL', b'WZWorker', b'terminate'])
@@ -162,14 +169,17 @@ def terminate():
     #     pass
     logger.info('Exiting')
 
+
 def interrupt_handler(signal, frame):
     pass # Just do nothing
+
 
 def terminate_handler(signal, frame):
     terminate()
 
 signal.signal(signal.SIGINT, interrupt_handler)
 signal.signal(signal.SIGTERM, terminate_handler)
+
 
 def make_net(proxy, proxytype):
     # if proxy in rps:
@@ -229,10 +239,10 @@ def create_spawn(proxy, proxytype, pc, uq=None):
         w.caprate_limit = c.caprate_limit
         w.catrymax = c.catrymax
         w.conlimit = c.conlimit
-        w.successtimeout = c.successtimeout
-        w.errortimeout = c.errortimeout
-        w.topic_successtimeout = c.topic_successtimeout
-        w.comment_successtimeout = c.comment_successtimeout
+        w.successwait = c.successwait
+        w.errorwait = c.errorwait
+        w.topic_successwait = c.topic_successwait
+        w.comment_successwait = c.comment_successwait
         w.target_cps = c.target_cps
         w.cps_adjuction_step_min = c.cps_adjuction_step_min
         w.cps_adjuction_scale = c.cps_adjuction_scale
@@ -242,6 +252,7 @@ def create_spawn(proxy, proxytype, pc, uq=None):
         yield w
 
 # UniWipe patching end
+
 
 class WipeManager:
     def __init__(self, config, *args, **kvargs):
@@ -501,6 +512,26 @@ class WipeManager:
         self.th_sock.send_multipart(msg)
         self.pr_sock.send_multipart(msg)
 
+    def handle_protected(self, interface, method, data):
+        if len(data) != 3:
+            raise ValueError('Invalid number of arguments')
+        if not hasattr(self, 'pc'):
+            raise RuntimeError('No process context here')
+        domain, user, id_ = map(lambda x: x.decode('utf-8'), data)
+        # Validate domain here
+        t = (user, id_)
+        self.pc.ensure_shared_set(domain+'protected')
+        tset = self.pc.sets[domain+'protected']
+        if method == b'add-protected':
+            tset.add(t)
+        elif method == b'remove-protected':
+            if t in tset:
+                tset.remove(t)
+            else:
+                self.log.warning('Target %s is not in protected', repr(t))
+        else:
+            raise ValueError('Unknown method '+repr(method))
+
     def __call__(self, parent):
         self.p = parent
         self.log = parent.log
@@ -508,9 +539,13 @@ class WipeManager:
         self.running = parent.running
         self.p.sig_sock.setsockopt(zmq.SUBSCRIBE, b'WipeManager')
         self.p.wz.set_sig_handler(b'WipeManager', b'passthrough', self.send_passthrough)
+        self.p.wz.set_sig_handler(b'WipeManager', b'add-protected',
+                                  self.handle_protected)
+        self.p.wz.set_sig_handler(b'WipeManager', b'remove-protected',
+                                  self.handle_protected)
         if self.c.tcount > 0:
             self.pc = ProcessContext(self.p.name, self.p.ctx,
-                self.c.router_addr, noproxy_rp)
+                                     self.c.router_addr, noproxy_rp, d.bm_id_forum)
             self.spawnqueue = Queue()
             self.load_bumplimit_set()
             self.load_targets()
@@ -693,6 +728,28 @@ def drop_users():
 
 def log_spawn_name():
     send_passthrough([b'WipeThread', b'WipeThread', b'log-spawn-name'])
+
+def add_protected(domain, id_, tuser=None):
+    frames = [b'WipeManager', # Substring
+              b'WipeManager', b'add-protected', # Interface, Method
+              domain.encode('utf-8'), tuser.encode('utf-8'), id_.encode('utf-8')]
+    send_to_wm(frames)
+
+def remove_protected(domain, id_, tuser=''):
+    frames = [b'WipeManager', # Substring
+              b'WipeManager', b'add-protected', # Interface, Method
+              domain.encode('utf-8'), tuser.encode('utf-8'), id_.encode('utf-8')]
+    send_to_wm(frames)
+
+def apfu(urls):
+    for user, domain, id1, id2 in r_di.findall(urls):
+        id_ = id1+id2
+        add_protected(domain, id_, user)
+
+def rpfu(urls):
+    for user, domain, id1, id2 in r_di.findall(urls):
+        id_ = id1+id2
+        remove_protected(domain, id_, user)
 
 try:
     import IPython
