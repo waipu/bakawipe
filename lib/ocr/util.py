@@ -3,7 +3,7 @@
 import os
 
 def get_img(net, url):
-  img = net.req(url)  
+  img = net.req(url)
   return img
 
 def save_img(fobj, fpath, tmppath='temp'):

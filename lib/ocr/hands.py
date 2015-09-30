@@ -5,6 +5,7 @@ from subprocess import Popen
 
 viewer_cmd = ['ida']
 
+
 def hands_solve(ipath):
   vc = viewer_cmd[:]
   vc.append(ipath)
